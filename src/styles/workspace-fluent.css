@@ -1,0 +1,477 @@
+/**
+ * Fluent-style settings surfaces & dashboard tiles (Win11 Settings-like).
+ * Used only under the main workspace; import after workspace-win11.css.
+ */
+
+/* —— Nav: no harsh focus ring; accent strip on selection —— */
+.workspace-root.workspace-win11 .workspace-nav-link {
+  border: 1px solid transparent;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-link:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-link:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-link.active {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+  position: relative;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-link.active::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 44%;
+  min-height: 14px;
+  border-radius: 2px;
+  background: var(--accent-primary);
+}
+
+/* —— Mica-like main column —— */
+.workspace-root.workspace-win11 .workspace-main {
+  background:
+    radial-gradient(120% 55% at 0% 0%, color-mix(in srgb, var(--accent-primary) 9%, transparent), transparent 52%),
+    radial-gradient(90% 40% at 100% 0%, color-mix(in srgb, var(--accent-primary) 5%, transparent), transparent 45%),
+    var(--bg-primary);
+}
+
+:root[data-workspace-theme="dark"] .workspace-root.workspace-win11 .workspace-main {
+  background:
+    radial-gradient(120% 50% at 0% 0%, rgba(96, 205, 255, 0.07), transparent 50%),
+    radial-gradient(70% 40% at 100% 10%, rgba(96, 205, 255, 0.04), transparent 42%),
+    var(--bg-primary);
+}
+
+:root[data-workspace-theme="light"] .workspace-root.workspace-win11 .workspace-main {
+  background:
+    radial-gradient(120% 50% at 0% 0%, rgba(0, 103, 192, 0.06), transparent 50%),
+    radial-gradient(80% 45% at 100% 0%, rgba(0, 103, 192, 0.04), transparent 42%),
+    var(--bg-primary);
+}
+
+/* —— Info / status bars (replacing flat banners) —— */
+.workspace-root.workspace-win11 .win11-infobar {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-default);
+  border-left: 4px solid var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-secondary));
+  box-shadow: var(--shadow-sm);
+}
+
+.workspace-root.workspace-win11 .win11-infobar--success {
+  border-left-color: var(--status-success);
+  background: color-mix(in srgb, var(--status-success) 10%, var(--bg-secondary));
+}
+
+.workspace-root.workspace-win11 .win11-infobar--error {
+  border-left-color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 10%, var(--bg-secondary));
+}
+
+.workspace-root.workspace-win11 .win11-infobar-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-root.workspace-win11 .win11-infobar-body strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.workspace-root.workspace-win11 .win11-infobar-body p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.workspace-root.workspace-win11 .win11-infobar-body strong + p {
+  margin-top: 4px;
+}
+
+.workspace-root.workspace-win11 .workspace-page-header + .win11-infobar {
+  margin-bottom: 16px;
+}
+
+.workspace-root.workspace-win11 .win11-infobar .btn {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* —— Fluent settings card —— */
+.workspace-root.workspace-win11 .fluent-surface {
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 0 0 1px color-mix(in srgb, var(--bg-secondary) 80%, transparent) inset;
+}
+
+:root[data-workspace-theme="dark"] .workspace-root.workspace-win11 .fluent-surface {
+  box-shadow: var(--shadow-sm);
+}
+
+.workspace-root.workspace-win11 .fluent-surface.card > h2,
+.workspace-root.workspace-win11 .fluent-surface.card > .fluent-surface-heading {
+  margin: 0 0 4px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border-default);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-tertiary) 55%, var(--bg-secondary));
+}
+
+.workspace-root.workspace-win11 .settings-page .card.fluent-surface > h2 {
+  padding-bottom: 12px;
+}
+
+.workspace-root.workspace-win11 .fluent-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-root.workspace-win11 .fluent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 38%);
+  gap: 20px 24px;
+  align-items: center;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border-default);
+}
+
+.workspace-root.workspace-win11 .fluent-rows > .fluent-row:first-child {
+  border-top: none;
+}
+
+.workspace-root.workspace-win11 .fluent-row--block {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.workspace-root.workspace-win11 .fluent-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workspace-root.workspace-win11 .fluent-row-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.workspace-root.workspace-win11 .fluent-row-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.workspace-root.workspace-win11 .fluent-row-desc kbd {
+  margin: 0 2px;
+}
+
+.workspace-root.workspace-win11 .fluent-row-control input,
+.workspace-root.workspace-win11 .fluent-row-control select {
+  width: 100%;
+  min-height: 32px;
+}
+
+.workspace-root.workspace-win11 .fluent-row-control--wide {
+  grid-column: 1 / -1;
+}
+
+.workspace-root.workspace-win11 .fluent-row-control--weights {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.workspace-root.workspace-win11 .fluent-row-control--weights input {
+  width: 4.5rem;
+  min-width: 0;
+}
+
+.workspace-root.workspace-win11 .fluent-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.workspace-root.workspace-win11 .competition-candidate {
+  margin: 12px 20px;
+  padding: 4px 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-tertiary) 35%, var(--bg-secondary));
+}
+
+.workspace-root.workspace-win11 .competition-candidate .fluent-rows {
+  padding-top: 4px;
+}
+
+.workspace-root.workspace-win11 .fluent-surface-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--bg-tertiary) 40%, var(--bg-secondary));
+}
+
+.workspace-root.workspace-win11 .fluent-surface-hint {
+  margin: 0;
+  padding: 12px 20px 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-default);
+}
+
+.workspace-root.workspace-win11 .fluent-surface-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border-default);
+}
+
+.workspace-root.workspace-win11 .fluent-surface-log {
+  margin: 0 20px 16px;
+  border-radius: var(--radius);
+}
+
+@media (max-width: 720px) {
+  .workspace-root.workspace-win11 .fluent-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
+/* —— Home dashboard —— */
+.workspace-root.workspace-win11 .home-dashboard {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.workspace-root.workspace-win11 .home-tile {
+  grid-column: span 4;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 168px;
+  padding: 18px 18px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease;
+}
+
+.workspace-root.workspace-win11 .home-tile--wide {
+  grid-column: span 6;
+}
+
+.workspace-root.workspace-win11 .home-tile--link:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 35%, var(--border-default));
+  box-shadow:
+    var(--shadow-card),
+    0 0 0 1px color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  background: color-mix(in srgb, var(--bg-secondary) 92%, var(--accent-muted));
+}
+
+.workspace-root.workspace-win11 .home-tile--link:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.workspace-root.workspace-win11 .home-tile-accent {
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent-primary);
+  opacity: 0.85;
+}
+
+.workspace-root.workspace-win11 .home-tile-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-left: 10px;
+  margin-bottom: 6px;
+}
+
+.workspace-root.workspace-win11 .home-tile-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.workspace-root.workspace-win11 .home-tile-chevron {
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transform: translateX(2px);
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+
+.workspace-root.workspace-win11 .home-tile--link:hover .home-tile-chevron {
+  color: var(--accent-primary);
+  transform: translateX(3px);
+}
+
+.workspace-root.workspace-win11 .home-tile-lead {
+  margin: 0 0 10px;
+  padding-left: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.workspace-root.workspace-win11 .home-tile-body {
+  flex: 1;
+  padding-left: 10px;
+  min-height: 0;
+}
+
+.workspace-root.workspace-win11 .home-tile-desc {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.workspace-root.workspace-win11 .home-tile-dl {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-root.workspace-win11 .home-tile-dl > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  align-items: baseline;
+}
+
+.workspace-root.workspace-win11 .home-tile-dl dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.workspace-root.workspace-win11 .home-tile-dl dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.workspace-root.workspace-win11 .home-tile-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  padding-left: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.workspace-root.workspace-win11 .home-tile-stat {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.workspace-root.workspace-win11 .home-tile-stat--muted {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 1080px) {
+  .workspace-root.workspace-win11 .home-tile,
+  .workspace-root.workspace-win11 .home-tile--wide {
+    grid-column: span 6;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-root.workspace-win11 .home-tile,
+  .workspace-root.workspace-win11 .home-tile--wide {
+    grid-column: span 12;
+  }
+}
+
+/* Appearance: surface spacing when heading is h2 */
+.workspace-root.workspace-win11 .fluent-surface .appearance-theme-grid {
+  margin: 8px 20px 20px;
+}
+
+.workspace-root.workspace-win11 .fluent-surface > .muted {
+  margin: 0 20px 12px;
+}
+
+.workspace-root.workspace-win11 .fluent-surface > .muted.small {
+  margin-top: -4px;
+}
+
+.workspace-root.workspace-win11 .fluent-surface > .settings-actions {
+  margin: 0;
+  padding: 12px 20px 18px;
+  border-top: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--bg-tertiary) 35%, var(--bg-secondary));
+}
+
+.workspace-root.workspace-win11 .fluent-surface .settings-note {
+  margin: 0 20px 16px;
+}
+
+.workspace-root.workspace-win11 .fluent-surface .privacy-card-prose {
+  margin: 0 20px 22px;
+}

@@ -1,0 +1,344 @@
+/**
+ * Windows 11–style shell for the main workspace (设置 / 工作区窗口).
+ * Scoped to `.workspace-root.workspace-win11` so the floating panel webview is unchanged.
+ */
+
+.workspace-root.workspace-win11 {
+  font-family: "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+
+  --bg-primary: #202020;
+  --bg-secondary: #2b2b2b;
+  --bg-tertiary: #333333;
+  --bg-elevated: #353535;
+  --bg-input: rgba(255, 255, 255, 0.06);
+
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
+
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.65);
+  --text-muted: rgba(255, 255, 255, 0.45);
+
+  --accent-primary: #60cdff;
+  --accent-hover: #7bd8ff;
+  --accent-pressed: #47b8e8;
+  --accent-subtle: rgba(96, 205, 255, 0.16);
+  --accent-muted: rgba(96, 205, 255, 0.09);
+
+  --status-success: #6ccb6f;
+  --status-warning: #fce100;
+  --status-error: #ff99a4;
+  --status-info: var(--accent-primary);
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-card: 8px;
+  --radius-lg: 8px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-workspace-theme="light"] .workspace-root.workspace-win11 {
+  --bg-primary: #f3f3f3;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f0f0f0;
+  --bg-elevated: #fafafa;
+  --bg-input: #fbfbfb;
+
+  --border-default: rgba(0, 0, 0, 0.057);
+  --border-strong: rgba(0, 0, 0, 0.11);
+
+  --text-primary: #1b1b1b;
+  --text-secondary: #5c5c5c;
+  --text-muted: #767676;
+
+  --accent-primary: #0067c0;
+  --accent-hover: #005a9e;
+  --accent-pressed: #004578;
+  --accent-subtle: rgba(0, 103, 192, 0.12);
+  --accent-muted: rgba(0, 103, 192, 0.06);
+
+  --status-success: #0f7b0f;
+  --status-warning: #9d5d00;
+  --status-error: #c42b1c;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.workspace-root.workspace-win11 {
+  background: var(--bg-primary);
+  background-image: none;
+}
+
+:root[data-workspace-theme="light"] .workspace-root.workspace-win11 {
+  background-image: none;
+}
+
+.workspace-root.workspace-win11.app-window-frame {
+  border: 1px solid var(--border-strong);
+}
+
+/* Title bar: Mica-like strip */
+.workspace-root.workspace-win11 .custom-titlebar {
+  min-height: 48px;
+  border-bottom: 1px solid var(--border-default);
+  background: rgba(43, 43, 43, 0.72);
+  backdrop-filter: blur(32px) saturate(1.2);
+  -webkit-backdrop-filter: blur(32px) saturate(1.2);
+}
+
+:root[data-workspace-theme="light"] .workspace-root.workspace-win11 .custom-titlebar {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.workspace-root.workspace-win11 .workspace-titlebar-mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent-primary);
+  box-shadow: none;
+}
+
+.workspace-root.workspace-win11 .workspace-titlebar-heading {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Left nav: Settings-style list */
+.workspace-root.workspace-win11 .workspace-nav {
+  width: 280px;
+  padding: 12px 8px 20px;
+  gap: 2px;
+  background: rgba(37, 37, 37, 0.78);
+  border-right: 1px solid var(--border-default);
+  backdrop-filter: blur(40px) saturate(1.15);
+  -webkit-backdrop-filter: blur(40px) saturate(1.15);
+}
+
+:root[data-workspace-theme="light"] .workspace-root.workspace-win11 .workspace-nav {
+  background: rgba(249, 249, 249, 0.88);
+}
+
+.workspace-root.workspace-win11 .workspace-nav-brand {
+  padding: 8px 10px 20px;
+  margin-bottom: 4px;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-brand-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+  background: var(--accent-primary);
+  box-shadow: none;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-brand-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-brand-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.workspace-root.workspace-win11 .workspace-nav-section {
+  margin: 18px 12px 6px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-link {
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 400;
+  gap: 12px;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-link::before {
+  display: none;
+}
+
+.workspace-root.workspace-win11 .workspace-nav-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+:root[data-workspace-theme="light"] .workspace-root.workspace-win11 .workspace-nav-link:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.workspace-root.workspace-win11 .workspace-nav-link.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+:root[data-workspace-theme="light"] .workspace-root.workspace-win11 .workspace-nav-link.active {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+}
+
+.workspace-root.workspace-win11 .workspace-nav-icon {
+  width: 20px;
+  opacity: 1;
+  color: var(--text-muted);
+}
+
+.workspace-root.workspace-win11 .workspace-nav-link:hover .workspace-nav-icon,
+.workspace-root.workspace-win11 .workspace-nav-link.active .workspace-nav-icon {
+  color: var(--text-secondary);
+}
+
+/* Content column */
+.workspace-root.workspace-win11 .workspace-main {
+  padding: 28px 36px 40px;
+  background: var(--bg-primary);
+}
+
+.workspace-root.workspace-win11 .workspace-page-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.workspace-root.workspace-win11 .workspace-page-title {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.workspace-root.workspace-win11 .workspace-page-desc {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Cards & grouped settings */
+.workspace-root.workspace-win11 .card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 20px 20px 18px;
+}
+
+.workspace-root.workspace-win11 .card h2 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.workspace-root.workspace-win11 .home-card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.workspace-root.workspace-win11 .home-card:hover {
+  transform: none;
+  box-shadow: var(--shadow-card);
+  border-color: var(--border-strong);
+  background: var(--bg-secondary);
+}
+
+/* Primary actions: Fluent filled button */
+.workspace-root.workspace-win11 .btn.primary {
+  border-radius: 4px;
+  color: #ffffff;
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.workspace-root.workspace-win11 .btn.primary:hover:not(:disabled) {
+  color: #ffffff;
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.workspace-root.workspace-win11 .btn.primary:active:not(:disabled) {
+  color: #ffffff;
+  background: var(--accent-pressed);
+  border-color: var(--accent-pressed);
+}
+
+.workspace-root.workspace-win11 .btn.secondary,
+.workspace-root.workspace-win11 .btn.tertiary,
+.workspace-root.workspace-win11 .btn.ghost {
+  border-radius: 4px;
+}
+
+:root[data-workspace-theme="light"] .workspace-root.workspace-win11 .btn.tertiary:hover:not(:disabled),
+:root[data-workspace-theme="light"] .workspace-root.workspace-win11 .btn.ghost:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.workspace-root.workspace-win11 .btn.tertiary:hover:not(:disabled),
+.workspace-root.workspace-win11 .btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Inputs */
+.workspace-root.workspace-win11 input,
+.workspace-root.workspace-win11 select,
+.workspace-root.workspace-win11 textarea {
+  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-input);
+}
+
+.workspace-root.workspace-win11 input:focus,
+.workspace-root.workspace-win11 select:focus,
+.workspace-root.workspace-win11 textarea:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--accent-primary);
+}
+
+.workspace-root.workspace-win11 code {
+  border-radius: 4px;
+  font-family: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+}
+
+/* Title bar window controls */
+.workspace-root.workspace-win11 .titlebar-btn {
+  border-radius: 4px;
+}
+
+.workspace-root.workspace-win11 .titlebar-btn-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+/* Commands / stats layouts */
+.workspace-root.workspace-win11 .cmd-list-side {
+  border-radius: var(--radius-lg);
+}
+
+.workspace-root.workspace-win11 .onboarding-step {
+  border-radius: var(--radius-lg);
+}
+
+/* Appearance theme tiles */
+.workspace-root.workspace-win11 .appearance-theme-tile {
+  border-radius: var(--radius);
+}
+
+.workspace-root.workspace-win11 .appearance-theme-tile-preview {
+  border-radius: 4px;
+}
+
+/* Settings page footer strip (models save bar) */
+.workspace-root.workspace-win11 .settings-page > .footer-actions {
+  border-radius: var(--radius-lg);
+}

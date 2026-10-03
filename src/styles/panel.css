@@ -1,0 +1,1322 @@
+/**
+ * IME-style floating panel:
+ * - exactly 4 primary buttons in the main strip
+ * - input expands to rail + editor
+ * - command button opens a popup and collapses on outside click
+ */
+
+html.panel-window-html,
+body.panel-window-body {
+  background: transparent !important;
+  min-height: 0 !important;
+  width: 100%;
+  height: 100%;
+  overflow: hidden !important;
+}
+
+body.panel-window-body #root {
+  background: transparent;
+  min-height: 0 !important;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  overflow: hidden !important;
+}
+
+/* Collapsed: fill the native window; do not clip the shell while it is wider than the frame. */
+body.panel-window-body.panel-window-collapsed,
+body.panel-window-body.panel-window-collapsed #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden !important;
+}
+
+.ime-panel-root:not(.ime-panel-root--expanded) {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.ime-panel-root {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  box-sizing: border-box;
+  background: transparent;
+  overflow: hidden;
+}
+
+.ime-panel-root--expanded {
+  /* Expanded: fill the whole native window. The shell (and its dark border) is
+     the window boundary — there is no transparent margin around it. */
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.ime-panel-shell {
+  display: inline-flex;
+  position: relative;
+  align-self: flex-start;
+  width: max-content;
+  max-width: none;
+  padding: 5px;
+  box-sizing: border-box;
+  /* The dark edge is a real CSS border (part of the border box), NOT an outward box-shadow.
+     This is the key fix for the "transparent halo layer" bug: an outward box-shadow renders
+     OUTSIDE the border box, so when the native window is sized to the shell's border box the
+     shadow gets clipped AND its transparent ring becomes an invisible hit-test area on
+     Windows/WebView2. A border is inside the border box, so the window edge == the visible
+     edge exactly — one layer, no halo.
+     Do NOT set overflow:hidden here — command/history popovers extend beyond the shell. */
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  border-radius: 16px;
+  /* Inset-only shadows for subtle depth; no outward spread/blur that would need padding. */
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  cursor: grab;
+}
+
+.ime-panel-shell[data-style-preset="graphite"] {
+  background:
+    radial-gradient(circle at top left, rgba(120, 200, 255, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(42, 42, 46, 0.95), rgba(22, 22, 26, 0.95));
+}
+
+.ime-panel-shell[data-style-preset="frost"] {
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.18), transparent 30%),
+    linear-gradient(180deg, rgba(227, 236, 250, 0.95), rgba(197, 211, 233, 0.92));
+}
+
+.ime-panel-shell[data-style-preset="ink"] {
+  background:
+    radial-gradient(circle at top left, rgba(87, 136, 255, 0.16), transparent 38%),
+    linear-gradient(180deg, rgba(24, 31, 53, 0.97), rgba(12, 17, 33, 0.97));
+}
+
+.ime-panel-shell--collapsed {
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+/* Collapsed: native window size is set to fit 4 icons — shell fills the frame, icons centered. */
+body.panel-window-body.panel-window-collapsed .ime-panel-root {
+  align-items: stretch;
+}
+
+body.panel-window-body.panel-window-collapsed .ime-panel-shell.ime-panel-shell--collapsed {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  max-width: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex-shrink: 1;
+  /* Extra side padding keeps head/tail icons clear of rounded-corner clipping. */
+  padding: 6px 10px;
+}
+
+body.panel-window-body.panel-window-collapsed .ime-panel-layout.ime-panel-layout--collapsed,
+body.panel-window-body.panel-window-collapsed .ime-rail-anchor,
+body.panel-window-body.panel-window-collapsed .ime-primary-rail.ime-primary-rail--horizontal {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  min-width: 0;
+  flex-shrink: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.ime-panel-shell--expanded {
+  /* Expanded: the shell FILLS the native window (width/height 100%). Width is fixed at 1280;
+     height is driven by Panel.tsx mirror measurements of wrapped content (400–720). Long
+     content scrolls inside the editor body/panes (overflow:auto there), so the shell itself
+     just clips its rounded corners. */
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  /* The dark edge as a real border (inside the border box) — no outward shadow halo. */
+  border: 2px solid rgba(0, 0, 0, 0.62);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.ime-panel-shell[data-style-preset="frost"].ime-panel-shell--expanded {
+  border: 2px solid rgba(32, 53, 84, 0.45);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.ime-panel-shell[data-style-preset="ink"].ime-panel-shell--expanded {
+  border: 2px solid rgba(160, 200, 255, 0.55);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(140, 180, 255, 0.08);
+}
+
+/* Collapsed / rail-only: hug icon content. Do NOT apply this to expanded shell/layout —
+   those must fill the fixed 1280px window. The old `:not(--collapsed)` rule had higher
+   specificity than `--expanded` and forced `width:max-content`, so long translate lines
+   grew the layout past the window and clipped the right result pane. */
+.ime-rail-anchor,
+.ime-primary-rail:not(.ime-primary-rail--horizontal) {
+  width: max-content;
+  max-width: none;
+  flex-shrink: 0;
+}
+
+/* Expanded: shell + layout fill the native window; rail stays fixed-width,
+   editor panel flexes into the remaining horizontal space. */
+.ime-panel-root--expanded,
+.ime-panel-shell.ime-panel-shell--expanded {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ime-panel-layout.ime-panel-layout--expanded {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  /* Allow the layout to shrink inside the shell when content is intrinsically wide. */
+  flex-shrink: 1;
+}
+
+.ime-resize-handle {
+  position: absolute;
+  z-index: 5;
+  user-select: none;
+}
+
+.ime-resize-handle--east {
+  top: 8px;
+  right: 0;
+  width: 8px;
+  height: calc(100% - 16px);
+  cursor: ew-resize;
+}
+
+.ime-resize-handle--south {
+  left: 8px;
+  bottom: 0;
+  width: calc(100% - 16px);
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.ime-resize-handle--corner {
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.ime-panel-layout {
+  display: flex;
+  gap: 6px;
+  width: max-content;
+}
+
+.ime-panel-layout--collapsed {
+  align-items: center;
+}
+
+.ime-panel-layout--expanded {
+  align-items: stretch;
+  /* Fill the shell vertically so the editor column can stretch to full height. */
+  height: 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.ime-rail-anchor {
+  position: relative;
+  width: max-content;
+  transition: padding var(--transition-med);
+}
+
+/* Expanded column: stretch to editor height so bottom rail icons can sit on margin-top: auto. */
+.ime-panel-layout--expanded .ime-rail-anchor {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  min-height: 0;
+}
+
+/* Collapsed: popover sits to the RIGHT of the horizontal icon rail (no vertical padding hack). */
+.ime-rail-anchor--command-open-collapsed {
+  padding-top: 0;
+}
+
+/* Expanded: reserve horizontal space for the command card to the right of the 38px vertical rail. */
+.ime-rail-anchor--command-open-expanded {
+  padding-right: 256px;
+}
+
+.ime-primary-rail {
+  display: flex;
+  width: max-content;
+}
+
+.ime-primary-rail--horizontal {
+  flex-direction: row;
+  align-items: center;
+}
+
+.ime-primary-rail--horizontal .ime-rail-cluster--main {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.ime-primary-rail--vertical {
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  align-self: stretch;
+  min-height: 0;
+  width: 38px;
+}
+
+.ime-primary-rail--vertical .ime-rail-cluster--main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ime-primary-rail--vertical .ime-rail-cluster--footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.ime-icon-btn {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(244, 247, 255, 0.96);
+  cursor: pointer;
+  font-size: 0.96rem;
+  line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition:
+    transform var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.ime-panel-shell[data-style-preset="frost"] .ime-icon-btn {
+  background: rgba(255, 255, 255, 0.46);
+  color: #294667;
+}
+
+.ime-icon-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(126, 206, 255, 0.24);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.16);
+}
+
+.ime-panel-shell[data-style-preset="frost"] .ime-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.ime-icon-btn .ime-icon-stroke {
+  display: block;
+  pointer-events: none;
+}
+
+.ime-icon-btn--active {
+  background: linear-gradient(180deg, rgba(122, 206, 255, 0.34), rgba(87, 164, 255, 0.18));
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.16),
+    inset 0 0 0 1px rgba(160, 225, 255, 0.18);
+}
+
+.ime-panel-shell[data-style-preset="frost"] .ime-icon-btn--active {
+  background: linear-gradient(180deg, rgba(112, 170, 255, 0.28), rgba(112, 170, 255, 0.14));
+  color: #1f4271;
+}
+
+.ime-command-popover {
+  position: absolute;
+  z-index: 40;
+  width: 240px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(20, 20, 24, 0.96);
+  color: #eef4ff;
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.28);
+}
+
+.ime-panel-shell[data-style-preset="frost"] .ime-command-popover {
+  background: rgba(246, 249, 255, 0.98);
+  color: #203554;
+}
+
+.ime-command-popover--collapsed {
+  left: calc(100% + 8px);
+  top: 0;
+}
+
+/* 38px rail + 8px gap — keeps the card off the icon column (was overlapping after wider popover). */
+.ime-command-popover--expanded {
+  left: calc(38px + 8px);
+  top: 0;
+}
+
+.ime-command-popover-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ime-command-popover-eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(208, 221, 247, 0.72);
+}
+
+.ime-panel-shell[data-style-preset="frost"] .ime-command-popover-eyebrow {
+  color: #7389a8;
+}
+
+.ime-command-current {
+  max-width: 100%;
+  min-width: 4.25em;
+  padding: 0.42rem 0.66rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ime-panel-shell[data-style-preset="frost"] .ime-command-current {
+  background: rgba(32, 53, 84, 0.08);
+}
+
+.ime-command-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ime-command-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0.4rem 0.15rem;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  text-align: center;
+}
+
+.ime-command-chip-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ime-command-chip:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.ime-command-chip--active {
+  background: rgba(126, 206, 255, 0.28);
+}
+
+.ime-command-desc {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: rgba(208, 221, 247, 0.78);
+}
+
+.ime-panel-shell[data-style-preset="frost"] .ime-command-desc {
+  color: #617897;
+}
+
+.ime-editor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  min-width: 0;
+  padding: 10px 10px 8px;
+  border-radius: 18px;
+  background: rgba(247, 250, 255, 0.96);
+  /* Inset-only: an outward blur here would bleed to the window edge (shell == window),
+     re-creating a dark halo. The shell's own border provides the outer dark edge. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.ime-editor-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.ime-editor-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Left meta: single inline row (status + command + model) so model sits flush after the command. */
+.ime-editor-meta--left {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.ime-editor-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ime-editor-meta--right {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  align-items: flex-start;
+  /* Actions stay a single non-wrapping row (queue / new / history / pin). */
+  flex-wrap: nowrap;
+  max-width: none;
+}
+
+.ime-theme-row {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.ime-theme-label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #547198;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ime-history-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: rgba(19, 38, 68, 0.06);
+  color: #547198;
+  cursor: pointer;
+  transition: background var(--transition-med), color var(--transition-med);
+}
+
+.ime-history-trigger:hover:not(:disabled) {
+  background: rgba(19, 38, 68, 0.11);
+  color: #163056;
+}
+
+.ime-history-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ime-history-trigger--open {
+  background: rgba(93, 152, 255, 0.18);
+  color: #1e4b8c;
+}
+
+.ime-new-task-trigger {
+  /* Same footprint as history / queue icon buttons. */
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+}
+
+.ime-new-task-trigger:hover:not(:disabled) {
+  background: rgba(45, 139, 71, 0.14);
+  color: #1f6b3a;
+}
+
+.ime-queue-trigger {
+  position: relative;
+}
+
+.ime-queue-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #3b82f6;
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.ime-input-history-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 260px;
+  max-width: min(380px, 78vw);
+  max-height: min(360px, 55vh);
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.99);
+  box-shadow: 0 10px 32px rgba(12, 37, 78, 0.18);
+  border: 1px solid rgba(110, 143, 196, 0.22);
+  z-index: 80;
+}
+
+.ime-input-history-empty {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.78rem;
+  color: #607696;
+}
+
+.ime-input-history-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.55rem;
+  margin: 2px 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #163056;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.ime-input-history-item:hover {
+  background: rgba(93, 152, 255, 0.12);
+}
+
+.ime-history-item-cmd {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #3d6aa8;
+  margin-bottom: 2px;
+}
+
+.ime-history-item-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7a90ad;
+}
+
+.ime-history-item-text {
+  color: #163056;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.ime-history-item-text--result {
+  color: #2a4a72;
+}
+
+.ime-history-item-draft {
+  margin-top: 2px;
+  font-size: 0.66rem;
+  color: #8a9bb3;
+}
+
+.ime-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0.24rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(19, 38, 68, 0.08);
+  color: #526b8e;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.ime-status-badge--running {
+  color: #1e7bb0;
+}
+
+.ime-status-badge--review {
+  color: #2d8b47;
+}
+
+.ime-status-badge--error {
+  color: #c24a62;
+}
+
+.ime-command-name {
+  /* Keep the full English title visible; shrink with an ellipsis only if the row is still too narrow. */
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #163056;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
+/* Model chip sits immediately after the command title on the same row. */
+.ime-provider-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-height: 24px;
+  min-width: 0;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(19, 38, 68, 0.06);
+  color: #547198;
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Competition candidate tags shown next to the provider chip when competition is on. */
+.ime-competition-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: min(280px, 100%);
+  min-width: 0;
+}
+
+.ime-model-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(19, 38, 68, 0.12);
+  background: rgba(255, 255, 255, 0.55);
+  color: #607696;
+  font-size: 0.62rem;
+  font-weight: 650;
+  white-space: nowrap;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ime-model-tag--active {
+  border-color: rgba(30, 123, 176, 0.45);
+  background: rgba(30, 123, 176, 0.12);
+  color: #1e5f8a;
+}
+
+.ime-model-tag--disabled {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.ime-editor-hint {
+  margin: 0;
+  max-width: none;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #607696;
+}
+
+/* Body wraps the input textarea and (when present) the result area. It is a flex row so
+   that when a result is shown the two panes sit side-by-side (left = editable input,
+   right = result). With no result, the textarea simply fills the whole body. It fills the
+   editor panel's remaining vertical space; each pane scrolls internally for long content. */
+.ime-editor-body {
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Split mode (result visible): each pane takes an equal share of the body width.
+   `flex-basis: 0` + `min-width: 0` prevents long unbroken lines from pushing the
+   sibling pane (and the shell's right edge) outside the fixed window. */
+.ime-editor-body--split .ime-input-area,
+.ime-editor-body--split .ime-result-area {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Expanded editor column: flex to fill the remaining width after the 38px rail (and the
+   256px command-popover reserve when the command card is open), and stretch to the full
+   shell height. overflow:hidden so the rounded shell clips it; the editor body inside
+   scrolls for content taller than the (auto-grown, max-720) window. */
+.ime-panel-layout--expanded .ime-editor-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.ime-input-area {
+  /* Fill the editor column. width:0 + flex-basis:0 stops a long English placeholder
+     from becoming the textarea's min-content width and pushing the pane past the window. */
+  width: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 72px;
+  /* Flex to fill the available vertical space inside the editor panel.
+     Long content scrolls internally instead of growing the window (the window is fixed-size). */
+  flex: 1 1 auto;
+  padding: 0.7rem 0.9rem;
+  box-sizing: border-box;
+  display: block;
+  resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  border: none;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    inset 0 0 0 1px rgba(110, 143, 196, 0.16),
+    0 2px 10px rgba(12, 37, 78, 0.06);
+  color: #162844;
+  font-size: 0.96rem;
+  line-height: 1.5;
+  font-family: var(--font-sans);
+  outline: none;
+  transition: box-shadow var(--transition-med), background var(--transition-med);
+}
+
+.ime-input-area:focus {
+  box-shadow:
+    inset 0 0 0 2px rgba(93, 152, 255, 0.35),
+    0 4px 14px rgba(62, 121, 225, 0.12);
+}
+
+.ime-input-area[readonly] {
+  background: rgba(250, 252, 255, 0.92);
+}
+
+.ime-result-area {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  /* In split mode this is the right pane: it flexes to share the body width with the input
+     (see .ime-editor-body--split) and fills the body height. Long results scroll internally. */
+  flex: 1 1 auto;
+  padding: 0.7rem 0.9rem;
+  box-sizing: border-box;
+  border-radius: 14px;
+  background: rgba(245, 248, 255, 0.96);
+  box-shadow:
+    inset 0 0 0 1px rgba(93, 152, 255, 0.18),
+    0 2px 10px rgba(12, 37, 78, 0.06);
+  cursor: pointer;
+  overflow: auto;
+  position: relative;
+  transition: box-shadow var(--transition-fast);
+}
+
+.ime-result-area--review {
+  cursor: pointer;
+  user-select: text;
+}
+
+.ime-result-area--review:hover {
+  box-shadow:
+    inset 0 0 0 2px rgba(93, 152, 255, 0.4),
+    0 4px 14px rgba(62, 121, 225, 0.1);
+}
+
+.ime-result-area--running {
+  cursor: default;
+}
+
+.ime-result-area:focus-visible {
+  outline: 2px solid rgba(93, 152, 255, 0.5);
+  outline-offset: 2px;
+}
+
+.ime-result-text {
+  margin: 0;
+  max-width: 100%;
+  font-family: var(--font-sans);
+  font-size: 0.96rem;
+  line-height: 1.55;
+  color: #162844;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+.ime-result-text::selection {
+  background: rgba(93, 152, 255, 0.35);
+  color: #0a1a33;
+}
+
+.ime-result-text--streaming {
+  color: #4d6789;
+}
+
+.ime-result-toast {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(45, 139, 71, 0.92);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  pointer-events: none;
+  animation: ime-toast-fade 1.2s ease-out forwards;
+}
+
+@keyframes ime-toast-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.ime-zorder-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0.2rem 0.5rem;
+  border: none;
+  border-radius: 999px;
+  background: rgba(19, 38, 68, 0.06);
+  color: #547198;
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+/* Compact pin in the header action row: icon-only; full mode name lives in title/aria-label. */
+.ime-zorder-chip--compact {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.ime-zorder-chip:hover {
+  background: rgba(19, 38, 68, 0.12);
+  color: #163056;
+}
+
+.ime-zorder-chip--upper {
+  background: rgba(93, 152, 255, 0.18);
+  color: #1e4b8c;
+}
+
+.ime-zorder-chip--upper:hover {
+  background: rgba(93, 152, 255, 0.28);
+}
+
+.ime-zorder-chip--always_top {
+  background: linear-gradient(180deg, rgba(255, 196, 92, 0.32), rgba(255, 160, 60, 0.18));
+  color: #7a4a0a;
+  box-shadow: inset 0 0 0 1px rgba(255, 200, 100, 0.4);
+}
+
+.ime-zorder-chip--always_top:hover {
+  background: linear-gradient(180deg, rgba(255, 196, 92, 0.42), rgba(255, 160, 60, 0.24));
+}
+
+.ime-zorder-chip-text {
+  font-size: 0.66rem;
+  line-height: 1;
+}
+
+.ime-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ime-feedback span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 0.3rem 0.62rem;
+  border-radius: 999px;
+  background: rgba(17, 33, 61, 0.06);
+  color: #4d6789;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ime-feedback--error {
+  padding: 0.72rem 0.9rem;
+  border-radius: 14px;
+  background: rgba(255, 92, 128, 0.12);
+  color: #b23452;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+/* Hidden measurement mirrors used by Panel.tsx to auto-size the expanded window to its
+   content (longest input line for width, wrapped height for height) WITHOUT depending on
+   the flex-filled, window-sized real elements (which would be circular). They are rendered
+   off-screen with the SAME font / padding / wrapping rules as the real textarea and result
+   `<pre>`, so their measured size equals what the real elements would need. Switched between
+   `white-space: pre` (longest-line width) and `pre-wrap` (wrapped height at a set width) in
+   JS. Never visible, never hit-tested. */
+.ime-measure-mirror {
+  position: fixed;
+  left: -99999px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-sizing: border-box;
+  font-family: var(--font-sans);
+  font-size: 0.96rem;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  border: 0;
+  margin: 0;
+  max-width: none;
+  white-space: pre-wrap;
+}
+
+/* Input mirror matches `.ime-input-area` (same padding + line-height). */
+.ime-measure-mirror--input {
+  padding: 0.7rem 0.9rem;
+  line-height: 1.5;
+}
+
+/* Result mirror matches `.ime-result-text` inside `.ime-result-area` (same padding +
+   line-height). */
+.ime-measure-mirror--result {
+  padding: 0.7rem 0.9rem;
+  line-height: 1.55;
+}
+
+/* ---------------------------------------------------------------------------
+   Processing queue popover (header icon — does not affect editor body layout)
+   --------------------------------------------------------------------------- */
+
+.ime-queue-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: min(360px, 82vw);
+  max-height: min(420px, 58vh);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.55rem 0.6rem 0.65rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.99);
+  border: 1px solid rgba(30, 55, 95, 0.12);
+  box-shadow: 0 10px 28px rgba(16, 36, 68, 0.16);
+  color: #163056;
+}
+
+.ime-panel-shell[data-style-preset="ink"] .ime-queue-popover {
+  background: rgba(22, 28, 38, 0.98);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #e8eef8;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+.ime-queue-popover-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.ime-queue-popover-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ime-queue-popover-meta {
+  font-size: 0.68rem;
+  opacity: 0.65;
+}
+
+.ime-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.ime-queue-actions .btn.small {
+  font-size: 0.72rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 8px;
+}
+
+.ime-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: calc(5 * 28px + 8px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ime-queue-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 28px;
+  padding: 0.15rem 0.25rem;
+  border-radius: 8px;
+  background: rgba(19, 38, 68, 0.06);
+}
+
+.ime-panel-shell[data-style-preset="ink"] .ime-queue-item {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ime-queue-item--running {
+  outline: 1px solid rgba(59, 130, 246, 0.45);
+}
+
+.ime-queue-item--done {
+  opacity: 0.72;
+}
+
+.ime-queue-item--error {
+  outline: 1px solid rgba(255, 100, 120, 0.4);
+}
+
+.ime-queue-item-main {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.1rem 0;
+}
+
+.ime-queue-item-index {
+  flex: 0 0 auto;
+  min-width: 1.4rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+  text-align: right;
+}
+
+.ime-queue-item-status {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 600;
+  opacity: 0.85;
+  min-width: 2.6rem;
+}
+
+.ime-queue-item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.74rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.92;
+}
+
+.ime-queue-item-cmd,
+.ime-queue-item-cmd-label {
+  max-width: 7.5rem;
+  font-size: 0.68rem;
+  opacity: 0.8;
+}
+
+.ime-queue-item-cmd {
+  border-radius: 6px;
+  border: 1px solid rgba(30, 55, 95, 0.18);
+  background: rgba(255, 255, 255, 0.9);
+  color: inherit;
+  padding: 0.1rem 0.25rem;
+}
+
+.ime-panel-shell[data-style-preset="ink"] .ime-queue-item-cmd {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.ime-queue-item-cmd-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ime-queue-item-remove {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.ime-queue-item-remove:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(255, 80, 100, 0.18);
+}
+
+.ime-queue-item-remove:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.ime-queue-empty {
+  margin: 0;
+  font-size: 0.72rem;
+  opacity: 0.65;
+  line-height: 1.4;
+}

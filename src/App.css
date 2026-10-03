@@ -1,0 +1,12 @@
+/**
+ * Global stylesheet entry: Tailwind + layered design system.
+ * Order: tokens → components → workspace chrome → Quick Panel.
+ */
+@import "tailwindcss";
+@import "./styles/tokens.css";
+@import "./styles/components.css";
+@import "./styles/workspace.css";
+@import "./styles/workspace-win11.css";
+@import "./styles/workspace-fluent.css";
+@import "./styles/atelier.css";
+@import "./styles/panel.css";

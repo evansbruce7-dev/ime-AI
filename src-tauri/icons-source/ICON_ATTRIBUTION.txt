@@ -1,0 +1,8 @@
+Application and tray icons are generated with `tauri icon` from a square crop of:
+
+  ../images/AI IME.png  (center-cropped to images/app-icon-square.png for the CLI)
+
+Bundled outputs live under src-tauri/icons/ (ICO/ICNS/PNG, Android, iOS, Appx).
+The tray uses the same default window icon as the executable (see src-tauri/src/lib.rs).
+
+Legacy reference (previous art): wand-sparkles.svg — Lucide Icons, ISC.

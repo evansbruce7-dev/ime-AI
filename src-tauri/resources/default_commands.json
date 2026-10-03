@@ -1,0 +1,32 @@
+[
+  {
+    "id": "translate_zh",
+    "title": "翻译为中文",
+    "prompt": "将以下内容翻译为中文，仅输出翻译结果：\n\n{{input}}"
+  },
+  {
+    "id": "translate_en",
+    "title": "翻译为英文",
+    "prompt": "将以下内容翻译为英文，仅输出翻译结果：\n\n{{input}}"
+  },
+  {
+    "id": "polish",
+    "title": "润色",
+    "prompt": "润色以下文本，保持原意，仅输出润色结果：\n\n{{input}}"
+  },
+  {
+    "id": "summarize",
+    "title": "摘要",
+    "prompt": "为以下内容生成简洁摘要，仅输出摘要：\n\n{{input}}"
+  },
+  {
+    "id": "expand",
+    "title": "扩写",
+    "prompt": "扩写以下内容，保持原意，仅输出扩写结果：\n\n{{input}}"
+  },
+  {
+    "id": "correct",
+    "title": "纠错",
+    "prompt": "纠正以下文本中的错误，仅输出纠正后的结果：\n\n{{input}}"
+  }
+]

@@ -1,0 +1,117 @@
+/**
+ * Design tokens: modern minimal dark UI — neutral ink surfaces, single cool accent, soft elevation.
+ */
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --color-brand: #8ab4ff;
+  --color-brand-dim: #6b93e8;
+}
+
+:root {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  font-feature-settings: "kern" 1, "liga" 1;
+
+  --bg-primary: #09090b;
+  --bg-secondary: #101014;
+  --bg-tertiary: #18181f;
+  --bg-elevated: #1c1c24;
+
+  --accent-primary: #8ab4ff;
+  --accent-hover: #9dc0ff;
+  --accent-pressed: #7398e6;
+  --accent-subtle: rgba(138, 180, 255, 0.14);
+  --accent-muted: rgba(138, 180, 255, 0.08);
+
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-disabled: #52525b;
+
+  --border-default: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.11);
+
+  --status-success: #86efac;
+  --status-warning: #fde047;
+  --status-error: #fca5a5;
+  --status-info: var(--accent-primary);
+
+  --text: var(--text-primary);
+  --text-subtle: var(--text-muted);
+  --bg: var(--bg-primary);
+  --bg-raised: var(--bg-secondary);
+  --bg-input: var(--bg-tertiary);
+  --border: var(--border-default);
+
+  --accent: var(--accent-primary);
+  --focus-ring: var(--accent-subtle);
+
+  --font-xs: 0.72rem;
+  --font-sm: 0.8125rem;
+  --font-base: 0.9375rem;
+  --font-lg: 1.0625rem;
+  --font-xl: 1.25rem;
+  --font-2xl: 1.625rem;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-card: 14px;
+  --radius-lg: 18px;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 40px rgba(0, 0, 0, 0.35);
+  --shadow-float: 0 20px 50px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+
+  --transition-fast: 0.14s ease;
+  --transition-med: 0.2s ease;
+}
+
+/* Main workspace window only (`document.documentElement.dataset.workspaceTheme`). */
+:root[data-workspace-theme="light"] {
+  --bg-primary: #f4f4f5;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e4e4e7;
+  --bg-elevated: #fafafa;
+
+  --accent-primary: #2563eb;
+  --accent-hover: #3b82f6;
+  --accent-pressed: #1d4ed8;
+  --accent-subtle: rgba(37, 99, 235, 0.12);
+  --accent-muted: rgba(37, 99, 235, 0.06);
+
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --text-disabled: #a1a1aa;
+
+  --border-default: rgba(24, 24, 27, 0.09);
+  --border-strong: rgba(24, 24, 27, 0.16);
+
+  --status-success: #15803d;
+  --status-warning: #a16207;
+  --status-error: #b91c1c;
+  --status-info: var(--accent-primary);
+
+  --text: var(--text-primary);
+  --text-subtle: var(--text-muted);
+  --bg: var(--bg-primary);
+  --bg-raised: var(--bg-secondary);
+  --bg-input: var(--bg-tertiary);
+  --border: var(--border-default);
+  --accent: var(--accent-primary);
+  --focus-ring: var(--accent-subtle);
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 12px 40px rgba(15, 23, 42, 0.08);
+  --shadow-float: 0 20px 50px rgba(15, 23, 42, 0.12);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
