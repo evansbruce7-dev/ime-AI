@@ -407,7 +407,13 @@
 .atelier-stage {
   width: min(1080px, 100%);
   margin: 0 auto;
-  padding: 28px 40px 72px;
+  /* Extra left padding so the page title and cards sit clear of the rail. */
+  padding: 32px 48px 72px 72px;
+}
+
+/* Shown only while a tab's script is still loading. Same box as a page, so the stage does not collapse. */
+.atelier-stage--hold {
+  min-height: 420px;
 }
 
 .atelier-intro {

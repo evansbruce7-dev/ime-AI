@@ -462,13 +462,20 @@ fn show_panel(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("panel") {
         let _ = w.unminimize();
         // 在 show() 之前预设展开态默认尺寸 1280×400；高度由前端按内容自动调整。
-        let width = PANEL_EXPANDED_WIDTH;
-        let height = PANEL_EXPANDED_HEIGHT;
-        let _ = w.set_min_size(Some(tauri::LogicalSize::new(
-            PANEL_EXPANDED_WIDTH,
-            PANEL_EXPANDED_HEIGHT,
-        )));
-        let _ = w.set_size(tauri::LogicalSize::new(width, height));
+        // 默认尺寸会按当前显示器工作区自动收窄（小屏 / 高缩放时不会铺满整个屏幕）。
+        let (width, height) = fit_panel_size(&w, PANEL_EXPANDED_WIDTH, PANEL_EXPANDED_HEIGHT);
+        // No webview yet to ask for devicePixelRatio; monitor DPI matches LogicalSize until the
+        // page reports the real ratio (text scaling included) on panel-opened.
+        let _ = commit_panel_size(
+            &w,
+            width,
+            height,
+            Some(width),
+            Some(height),
+            Some(PANEL_EXPANDED_WIDTH),
+            Some(PANEL_EXPANDED_MAX_HEIGHT),
+            resolve_panel_dpr(&w, None),
+        );
         let _ = w.show();
         let _ = w.set_focus();
         // Apply the persisted z-order mode so the panel opens at the right level.
@@ -541,18 +548,25 @@ fn reveal_panel_first_paint(
     state: State<AppState>,
     width: f64,
     height: f64,
+    device_pixel_ratio: Option<f64>,
 ) -> Result<(), String> {
-    store_panel_expanded_size(&state, width, height)?;
     let Some(panel) = app.get_webview_window("panel") else {
         eprintln!("[ui] reveal_panel_first_paint: panel window missing");
         return Err("panel window missing".to_string());
     };
-    panel
-        .set_size(tauri::LogicalSize::new(width, height))
-        .map_err(|e| {
-            eprintln!("[ui] reveal_panel_first_paint: set_size({width}, {height}) failed: {e}");
-            e.to_string()
-        })?;
+    // Fit first so the cached "last expanded size" is the size that is really applied.
+    let (width, height) = fit_panel_size(&panel, width, height);
+    store_panel_expanded_size(&state, width, height)?;
+    commit_panel_size(
+        &panel,
+        width,
+        height,
+        Some(width),
+        Some(height),
+        Some(PANEL_EXPANDED_WIDTH),
+        Some(PANEL_EXPANDED_MAX_HEIGHT),
+        resolve_panel_dpr(&panel, device_pixel_ratio),
+    )?;
     if let Err(e) = panel.show() {
         eprintln!("[ui] reveal_panel_first_paint: show() failed: {e}");
         return Err(e.to_string());
@@ -562,6 +576,136 @@ fn reveal_panel_first_paint(
     println!(
         "[ui] panel first-paint reveal: resized to {width}×{height} then shown (IPC-confirmed, rAF-independent)"
     );
+    Ok(())
+}
+
+/// Gap kept between the floating panel and the screen edge (logical px, each side).
+/// Mirrors `PANEL_SCREEN_MARGIN` in `src/pages/panel/panelConstants.ts`.
+const PANEL_SCREEN_MARGIN: f64 = 18.0;
+
+/// Upper bound for the expanded panel height (logical px). Mirrors `PANEL_EXPANDED_MAX_HEIGHT`.
+const PANEL_EXPANDED_MAX_HEIGHT: f64 = 720.0;
+
+/// Logical work-area size (monitor minus taskbar) of the monitor the panel is on.
+/// Logical = physical / that monitor's scale factor, so it is correct at 100%/125%/150%/200%.
+fn monitor_logical_work(window: &WebviewWindow) -> Option<(f64, f64)> {
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten())?;
+    let scale = monitor.scale_factor();
+    if !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    let area = monitor.work_area().size;
+    Some((area.width as f64 / scale, area.height as f64 / scale))
+}
+
+/// Clamp a requested panel size so it always fits inside the monitor's work area
+/// (minus a margin on each side). This is the only size policy Rust owns: the frontend
+/// measures what the content needs, Rust just guarantees the window never outgrows the screen.
+fn fit_panel_size(window: &WebviewWindow, width: f64, height: f64) -> (f64, f64) {
+    let Some((work_w, work_h)) = monitor_logical_work(window) else {
+        // No monitor info (rare): trust the frontend's measurement as-is.
+        return (width, height);
+    };
+    let max_w = (work_w - 2.0 * PANEL_SCREEN_MARGIN).max(1.0);
+    let max_h = (work_h - 2.0 * PANEL_SCREEN_MARGIN).max(1.0);
+    let fitted_w = width.min(max_w);
+    let fitted_h = height.min(max_h);
+    if (fitted_w - width).abs() > 0.5 || (fitted_h - height).abs() > 0.5 {
+        println!(
+            "[ui] panel fitted to work area {work_w:.0}×{work_h:.0}: {width:.0}×{height:.0} → {fitted_w:.0}×{fitted_h:.0}"
+        );
+    }
+    (fitted_w, fitted_h)
+}
+
+/// `devicePixelRatio` from the page, or the monitor DPI when the page has not reported one.
+fn resolve_panel_dpr(panel: &WebviewWindow, given: Option<f64>) -> f64 {
+    given
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .unwrap_or_else(|| match panel.scale_factor() {
+            Ok(scale) if scale.is_finite() && scale > 0.0 => scale,
+            _ => 1.0,
+        })
+}
+
+/// CSS pixels → physical pixels.
+///
+/// `LogicalSize` only multiplies by the monitor DPI. WebView2 also applies the Windows
+/// "make text bigger" setting, so `devicePixelRatio` can be larger than that DPI and the
+/// page then lays out bigger than the window (or the window is left with an empty band).
+/// `PhysicalSize(css * devicePixelRatio)` is the size the webview actually rasterizes.
+/// https://github.com/MicrosoftEdge/WebView2Feedback/issues/3699
+/// https://github.com/tauri-apps/tauri/issues/12420
+fn css_to_physical(css: f64, dpr: f64) -> f64 {
+    let dpr = if dpr.is_finite() && dpr > 0.0 { dpr } else { 1.0 };
+    (css * dpr).round().max(1.0)
+}
+
+/// Apply a CSS-pixel size to the panel and (re)install its min/max constraints.
+///
+/// `dpr` is `window.devicePixelRatio`. The size is applied as physical pixels so tao does
+/// not scale it a second time.
+///
+/// Shadow is forced off. On an undecorated window the default DWM shadow is implemented as
+/// a non-client inset (left/right/bottom frame; on Windows 10 any non-client area also makes
+/// the system draw a caption). tao then adds that inset on top of every `set_size`, and
+/// `set_min_size` / `set_max_size` call `set_size` again — so the window grows and will not
+/// shrink back to the icon pill. That leftover client area is the extra bottom panel.
+/// https://github.com/tauri-apps/tauri/issues/12285
+/// https://github.com/tauri-apps/tauri/issues/13176
+/// https://github.com/tauri-apps/tao/pull/1039
+fn commit_panel_size(
+    panel: &WebviewWindow,
+    width: f64,
+    height: f64,
+    min_width: Option<f64>,
+    min_height: Option<f64>,
+    max_width: Option<f64>,
+    max_height: Option<f64>,
+    dpr: f64,
+) -> Result<(), String> {
+    let _ = panel.set_shadow(false);
+    let (width, height) = fit_panel_size(panel, width, height);
+    // Constraints are still in CSS px here, and must bracket the size: min <= size <= max.
+    let min_w_css = min_width.unwrap_or(1.0).min(width).max(1.0);
+    let min_h_css = min_height.unwrap_or(1.0).min(height).max(1.0);
+    let max_w_css = max_width.unwrap_or(width).max(width);
+    let max_h_css = max_height.unwrap_or(height).max(height);
+    let phys_w = css_to_physical(width, dpr);
+    let phys_h = css_to_physical(height, dpr);
+    let min_w = css_to_physical(min_w_css, dpr).min(phys_w);
+    let min_h = css_to_physical(min_h_css, dpr).min(phys_h);
+    let max_w = css_to_physical(max_w_css, dpr).max(phys_w);
+    let max_h = css_to_physical(max_h_css, dpr).max(phys_h);
+
+    // tao's set_min_size / set_max_size each call set_inner_size(current client).
+    // SetWindowPos uses SWP_ASYNCWINDOWPOS, so "current" is still the OLD size until the
+    // window procedure runs. If set_size happens before those calls, the stale resize is
+    // posted last and the window stays at the size it was created with (1280×400). That is
+    // why the other machine still shows the full panel under the collapsed icons: the shrink
+    // never sticks. Constraints go first; the size we actually want is posted last.
+    let _ = panel.set_min_size(Some(tauri::PhysicalSize::new(1.0, 1.0)));
+    let _ = panel.set_max_size(Some(tauri::PhysicalSize::new(16384.0, 16384.0)));
+    panel
+        .set_min_size(Some(tauri::PhysicalSize::new(min_w, min_h)))
+        .map_err(|e| e.to_string())?;
+    panel
+        .set_max_size(Some(tauri::PhysicalSize::new(max_w, max_h)))
+        .map_err(|e| e.to_string())?;
+    panel
+        .set_size(tauri::PhysicalSize::new(phys_w, phys_h))
+        .map_err(|e| e.to_string())?;
+
+    if let Ok(inner) = panel.inner_size() {
+        println!(
+            "[ui] panel size committed css {width:.0}×{height:.0} × dpr {dpr:.2} = physical {phys_w:.0}×{phys_h:.0} → client {}×{} (min {min_w:.0}×{min_h:.0}, max {max_w:.0}×{max_h:.0})",
+            inner.width, inner.height,
+        );
+    }
     Ok(())
 }
 
@@ -580,6 +724,7 @@ fn sync_panel_window_geometry(
     x: Option<f64>,
     y: Option<f64>,
     cache_expanded_size: bool,
+    device_pixel_ratio: Option<f64>,
 ) -> Result<(), String> {
     if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
         return Err(format!("invalid panel geometry: {width}x{height}"));
@@ -587,19 +732,16 @@ fn sync_panel_window_geometry(
     let Some(panel) = app.get_webview_window("panel") else {
         return Err("panel window missing".to_string());
     };
-    if let (Some(mw), Some(mh)) = (min_width, min_height) {
-        panel
-            .set_min_size(Some(tauri::LogicalSize::new(mw, mh)))
-            .map_err(|e| e.to_string())?;
-    }
-    if let (Some(mxw), Some(mxh)) = (max_width, max_height) {
-        panel
-            .set_max_size(Some(tauri::LogicalSize::new(mxw, mxh)))
-            .map_err(|e| e.to_string())?;
-    }
-    panel
-        .set_size(tauri::LogicalSize::new(width, height))
-        .map_err(|e| e.to_string())?;
+    commit_panel_size(
+        &panel,
+        width,
+        height,
+        min_width,
+        min_height,
+        max_width,
+        max_height,
+        resolve_panel_dpr(&panel, device_pixel_ratio),
+    )?;
     if let (Some(px), Some(py)) = (x, y) {
         panel
             .set_position(tauri::LogicalPosition::new(px, py))
@@ -1688,6 +1830,12 @@ pub fn run() {
 
             attach_minimize_to_hide(&app.handle(), "panel");
             attach_panel_topmost_follows_focus(&app.handle());
+            // Drop the DWM shadow before the first show. On an undecorated window that shadow is
+            // a non-client strip (thick on Windows 10) and tao adds it again on every set_size.
+            if let Some(panel) = app.get_webview_window("panel") {
+                let _ = panel.set_shadow(false);
+                println!("[ui] panel shadow disabled");
+            }
 
             let tray_icon_image = load_tray_icon(&app.handle())?;
 

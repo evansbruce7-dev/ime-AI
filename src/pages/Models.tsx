@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   getSettings,
+  peekSettings,
   saveSettings,
   getApiKeyStatus,
   getApiKeyStatusFor,
@@ -37,7 +38,7 @@ const PROVIDER_OPTIONS = Object.entries(LLM_PROVIDER_DEFAULTS) as [
 export function ModelsPage() {
   const { locale, m } = useI18n();
   const copy = m.models;
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(peekSettings);
   const [keyStatus, setKeyStatus] = useState<{ configured: boolean; tail: string | null } | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [translationKeyInput, setTranslationKeyInput] = useState("");

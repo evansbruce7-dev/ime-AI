@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   clampQueueMaxSize,
   getSettings,
+  peekSettings,
   listCommands,
   saveSettings,
   type AppSettings,
@@ -19,7 +20,7 @@ import { visibleCommandTitle } from "./panel/panelCommandMeta";
 export function QueuePage() {
   const { locale, m } = useI18n();
   const copy = m.queue;
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(peekSettings);
   const [cmds, setCmds] = useState<PromptCommand[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);

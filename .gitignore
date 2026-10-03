@@ -1,5 +1,18 @@
 # Docs (keep locally, do not publish)
 *.md
+!/README.md
+!/README.en.md
+!/README/README.md
+!/README/README.en.md
+
+# Promo copy stays on this machine
+/README/小红书推广文案.md
+
+# Local screenshots, skills, and archives
+/docs/
+/skill/
+/.cursor/
+/ime-ai-companion.zip
 
 # Logs
 logs

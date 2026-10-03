@@ -52,31 +52,64 @@ import {
 } from "./panel/panelCommandMeta";
 import {
   clamp,
+  COLLAPSED_SIZE_SLACK_H,
+  COLLAPSED_SIZE_SLACK_W,
   computeCollapsedWindowSize,
   EDITOR_BODY_GAP,
   EXPANDED_BODY_MIN_HEIGHT,
   EXPANDED_COMMAND_POPOVER_RESERVE,
   EXPANDED_H_CHROME_OUTSIDE_BODY,
-  EXPANDED_PANEL_WIDTH,
-  EXPANDED_PRESET_HEIGHT,
   EXPANDED_V_CHROME_OUTSIDE_BODY,
+  fitToWorkArea,
   lineIndexAtCaret,
   measureWrappedHeight,
   PANEL_COLLAPSED_MIN_HEIGHT,
   PANEL_COLLAPSED_MIN_WIDTH,
-  PANEL_EXPANDED_MAX_HEIGHT,
-  PANEL_EXPANDED_MAX_WIDTH,
   PANEL_EXPANDED_MIN_HEIGHT,
   PANEL_EXPANDED_MIN_WIDTH,
   PANEL_MAX_HEIGHT,
   PANEL_MAX_WIDTH,
-  PANEL_SCREEN_MARGIN,
+  scaledExpandedBounds,
+  PANEL_VIEWPORT_POLL_MS,
+  PANEL_VIEWPORT_SETTLE_MAX_MS,
+  PANEL_VIEWPORT_TOLERANCE_PX,
   totalLineCount,
+  type WorkAreaLogical,
 } from "./panel/panelConstants";
 import { IconInfoOutline, IconInputHistory, IconNewTask, IconQueue, IconStatsOutline } from "./panel/panelIcons";
 
 type Phase = "idle" | "running" | "review" | "error";
-type PanelPlacement = "center" | "bottom-right";
+type PanelPlacement = "center" | "floating";
+
+type DockPoint = { x: number; y: number };
+
+const DOCK_POS_STORAGE_KEY = "ime.panel.dockPos";
+const DOCK_DRAG_SLOP_PX = 4;
+
+function readStoredDock(): DockPoint | null {
+  try {
+    const raw = localStorage.getItem(DOCK_POS_STORAGE_KEY);
+    if (!raw) return null;
+    const [xs, ys] = raw.split(",");
+    const x = Number(xs);
+    const y = Number(ys);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y };
+  } catch (error) {
+    console.warn("[toolbar] dock position unreadable", error);
+    return null;
+  }
+}
+
+function writeStoredDock(point: DockPoint): void {
+  try {
+    const saved = `${Math.round(point.x)},${Math.round(point.y)}`;
+    localStorage.setItem(DOCK_POS_STORAGE_KEY, saved);
+    console.log("[toolbar] dock position saved", saved);
+  } catch (error) {
+    console.warn("[toolbar] dock position not saved", error);
+  }
+}
 
 /** Fallback default command when settings / list are unavailable. */
 const DEFAULT_COMMAND_ID = "translate_en";
@@ -87,6 +120,67 @@ function resolveDefaultCommandId(list: PromptCommand[], preferred?: string | nul
   if (list.some((c) => c.id === want)) return want;
   if (list.some((c) => c.id === DEFAULT_COMMAND_ID)) return DEFAULT_COMMAND_ID;
   return list[0]?.id ?? DEFAULT_COMMAND_ID;
+}
+
+/**
+ * Wait until the webview viewport (CSS px) stops changing after a native resize.
+ *
+ * `set_size` returns before WebView2 has propagated the new client size to the page, so reading
+ * `innerWidth/innerHeight` right away would report the OLD size. We poll until two consecutive
+ * reads agree (the resize finished) or `PANEL_VIEWPORT_SETTLE_MAX_MS` runs out, then return the
+ * latest values.
+ */
+async function waitForViewportSettled(): Promise<{ width: number; height: number }> {
+  const startedAt = performance.now();
+  // Last sample and how many times in a row it repeated.
+  let lastW = -1;
+  let lastH = -1;
+  let repeats = 0;
+  while (performance.now() - startedAt < PANEL_VIEWPORT_SETTLE_MAX_MS) {
+    // Sleep one poll interval (setTimeout keeps working while the webview is not repainting).
+    await new Promise<void>((resolve) => window.setTimeout(resolve, PANEL_VIEWPORT_POLL_MS));
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    if (w === lastW && h === lastH) {
+      repeats += 1;
+      // Two identical follow-up reads in a row ⇒ the viewport is stable.
+      if (repeats >= 2) break;
+    } else {
+      lastW = w;
+      lastH = h;
+      repeats = 0;
+    }
+  }
+  return { width: window.innerWidth, height: window.innerHeight };
+}
+
+/**
+ * Clamp a CSS-pixel panel size to this screen.
+ *
+ * `screen.avail*` is in the same CSS pixels as layout (it already includes monitor DPI and the
+ * Windows text-size scale). The Tauri work area is physical px / monitor DPI only, so the two
+ * disagree when text scaling is not 100%. The smaller of the two is the size that both fits on
+ * the monitor and matches the page.
+ */
+function fitCssToThisScreen(width: number, height: number, workArea: WorkAreaLogical | null) {
+  const screen: WorkAreaLogical = {
+    width: window.screen.availWidth,
+    height: window.screen.availHeight,
+  };
+  const onScreen = fitToWorkArea(width, height, screen);
+  return fitToWorkArea(onScreen.width, onScreen.height, workArea);
+}
+
+/** 1280×400 on a ≥1080p CSS screen; smaller on a high-DPI / low-resolution screen. */
+function currentExpandedPreset() {
+  const design = scaledExpandedBounds(window.screen.availWidth, window.screen.availHeight);
+  const fitted = fitCssToThisScreen(design.width, design.minHeight, null);
+  console.log("[toolbar] expanded preset for this screen", {
+    avail: { width: window.screen.availWidth, height: window.screen.availHeight },
+    scale: design.scale,
+    fitted,
+  });
+  return { width: fitted.width, height: fitted.height, scale: design.scale };
 }
 
 /** Active unfinished items count toward the max-size gate. */
@@ -107,11 +201,43 @@ export function PanelPage() {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [commandOpen, setCommandOpen] = useState(false);
+  /** Keeps the card mounted while it slides shut. `commandSlideOpen` is the CSS open state. */
+  const [commandSlideMounted, setCommandSlideMounted] = useState(false);
+  const [commandSlideOpen, setCommandSlideOpen] = useState(false);
+  const commandWasOpenRef = useRef(false);
   const [stylePreset, setStylePreset] = useState<MenuStylePreset>(() => readMenuStylePreset());
   const [zorderMode, setZorderMode] = useState<PanelZorderMode>("default");
   const [copiedFlash, setCopiedFlash] = useState(false);
   const lastWindowSizeRef = useRef("");
+  /**
+   * Logical work area (monitor minus taskbar) of the screen the panel is on, cached so the
+   * synchronous size math can fit the panel to it. `null` until the first async lookup lands.
+   */
+  const workAreaRef = useRef<WorkAreaLogical | null>(null);
+  /** Bumped on every geometry request; an in-flight viewport-settle loop aborts when it changes. */
+  const geometrySeqRef = useRef(0);
+  /** Last placement applied + when, so a size correction can re-anchor a window we JUST positioned. */
+  const lastPlacementRef = useRef<{ placement: PanelPlacement; at: number } | null>(null);
+  /** Late-bound `placeWindowForPanelState` (declared after `applyPanelGeometry`, which needs it). */
+  const placeWindowRef = useRef<
+    ((width: number, height: number, placement: PanelPlacement, reason: string) => Promise<void>) | null
+  >(null);
   const pendingPlacementRef = useRef<PanelPlacement | null>(null);
+  /** Last place the collapsed keyboard icon was dropped, in logical px. */
+  const dockPointRef = useRef<DockPoint | null>(readStoredDock());
+  /** A drag just finished — swallow the click so it does not also toggle the panel. */
+  const suppressDockClickRef = useRef(false);
+  const dockDragRef = useRef<{
+    pointerId: number;
+    accX: number;
+    accY: number;
+    originX: number | null;
+    originY: number | null;
+    moved: boolean;
+    frame: { workLeft: number; workTop: number; workWidth: number; workHeight: number } | null;
+    winW: number;
+    winH: number;
+  } | null>(null);
   const frameRef = useRef<HTMLElement | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const editorPanelRef = useRef<HTMLElement | null>(null);
@@ -167,7 +293,7 @@ export function PanelPage() {
     setErrorMsg(null);
     setBusy(false);
     setPhase("idle");
-    pendingPlacementRef.current = "bottom-right";
+    pendingPlacementRef.current = "floating";
     flushSync(() => {
       setExpanded(false);
       setCommandOpen(false);
@@ -217,22 +343,134 @@ export function PanelPage() {
       maxHeight?: number;
       cacheExpandedSize?: boolean;
     }) => {
-      await syncPanelWindowGeometry({
-        width: opts.width,
-        height: opts.height,
-        minWidth: opts.minWidth,
-        minHeight: opts.minHeight,
-        maxWidth: opts.maxWidth,
-        maxHeight: opts.maxHeight,
-        cacheExpandedSize: opts.cacheExpandedSize ?? false,
+      // CSS px that fit both `screen.avail*` and the monitor work area. Rust then multiplies by
+      // devicePixelRatio. Do not multiply here — that would scale twice.
+      const fitted = fitCssToThisScreen(opts.width, opts.height, workAreaRef.current);
+      const dpr = window.devicePixelRatio || 1;
+      // Newest request wins: an in-flight check from an older request aborts.
+      const seq = ++geometrySeqRef.current;
+      console.log("[toolbar] applyPanelGeometry", {
+        requested: { width: opts.width, height: opts.height },
+        fitted,
+        workArea: workAreaRef.current,
+        avail: { width: window.screen.availWidth, height: window.screen.availHeight },
+        dpr,
+        seq,
       });
+
+      /** CSS px in, physical px applied in Rust (`set_size` + min/max). */
+      const send = (w: number, h: number) =>
+        syncPanelWindowGeometry({
+          width: w,
+          height: h,
+          minWidth: opts.minWidth,
+          minHeight: opts.minHeight,
+          maxWidth: opts.maxWidth,
+          maxHeight: opts.maxHeight,
+          cacheExpandedSize: opts.cacheExpandedSize ?? false,
+          devicePixelRatio: dpr,
+        });
+
+      // Apply immediately and return, so callers (placement, reveal) are never delayed by the
+      // single verification below.
+      await send(fitted.width, fitted.height);
+
+      // One check, not a loop. Repeating set_size on an undecorated window used to stack the
+      // DWM frame inset and make the window taller every pass.
+      void (async () => {
+        if (document.visibilityState === "hidden") {
+          console.log("[toolbar] viewport check skipped (window hidden)", { seq });
+          return;
+        }
+        const vp = await waitForViewportSettled();
+        if (seq !== geometrySeqRef.current) {
+          console.log("[toolbar] viewport check superseded", { seq, current: geometrySeqRef.current });
+          return;
+        }
+        if (!(vp.width > 0 && vp.height > 0)) {
+          console.warn("[toolbar] viewport check aborted (empty viewport)", vp);
+          return;
+        }
+        const err = Math.max(Math.abs(vp.width - fitted.width), Math.abs(vp.height - fitted.height));
+        console.log("[toolbar] viewport check", { target: fitted, viewport: vp, err, dpr });
+        if (err <= PANEL_VIEWPORT_TOLERANCE_PX) return;
+        // Factor is clamped so a window that refuses to shrink cannot run away in either direction.
+        const factorW = clamp(fitted.width / vp.width, 0.5, 1.5);
+        const factorH = clamp(fitted.height / vp.height, 0.5, 1.5);
+        const reqW = fitted.width * factorW;
+        const reqH = fitted.height * factorH;
+        console.log("[toolbar] viewport mismatch → one correction", { reqW, reqH, factorW, factorH });
+        await send(reqW, reqH);
+        const lastPlacement = lastPlacementRef.current;
+        if (
+          lastPlacement &&
+          Date.now() - lastPlacement.at < 1500 &&
+          seq === geometrySeqRef.current
+        ) {
+          console.log("[toolbar] re-placing window after size correction", lastPlacement);
+          await placeWindowRef.current?.(reqW, reqH, lastPlacement.placement, "viewport-correction");
+        }
+      })().catch((e) => console.warn("[toolbar] viewport verification failed", e));
     },
     [],
   );
 
-  const measureCollapsedShellSize = useCallback(() => computeCollapsedWindowSize(), []);
+  /**
+   * Re-read the work area (monitor minus taskbar, in logical px) of the screen the panel is on.
+   * Called on mount, on every expand/collapse and whenever the panel is shown, so moving the
+   * panel to another monitor or changing the display scale immediately re-fits the panel.
+   */
+  const refreshWorkArea = useCallback(async () => {
+    try {
+      const monitor = (await currentMonitor()) ?? (await primaryMonitor());
+      if (!monitor) {
+        console.warn("[toolbar] work area unavailable (no monitor)");
+        return;
+      }
+      const scale = monitor.scaleFactor > 0 ? monitor.scaleFactor : 1;
+      const next: WorkAreaLogical = {
+        width: monitor.workArea.size.width / scale,
+        height: monitor.workArea.size.height / scale,
+      };
+      const prev = workAreaRef.current;
+      workAreaRef.current = next;
+      const changed = !prev || Math.abs(prev.width - next.width) > 1 || Math.abs(prev.height - next.height) > 1;
+      console.log("[toolbar] work area refreshed", { next, scale, changed });
+      if (changed) {
+        // Force the next size sync through even if the content size key is unchanged.
+        lastWindowSizeRef.current = "";
+        syncFrameToWindowRef.current?.();
+      }
+    } catch (e) {
+      console.warn("[toolbar] work area lookup failed", e);
+    }
+  }, []);
+
+  const measureCollapsedShellSize = useCallback(() => {
+    const fallback = computeCollapsedWindowSize();
+    const shell = shellRef.current;
+    if (!shell) {
+      console.log("[toolbar] collapsed size fallback (no shell)", fallback);
+      return fallback;
+    }
+    const rect = shell.getBoundingClientRect();
+    // +slack: one transparent px so fractional-DPI rounding never clips the border / corners.
+    const w = Math.ceil(rect.width) + COLLAPSED_SIZE_SLACK_W;
+    const h = Math.ceil(rect.height) + COLLAPSED_SIZE_SLACK_H;
+    // A shell stretched to the (expanded-sized) window reports hundreds of px. Reject anything
+    // outside the plausible pill range and use the formula instead.
+    if (w < 32 || h < 30 || w > 600 || h > 160) {
+      console.log("[toolbar] collapsed size fallback (shell not hugging)", { w, h, fallback, dpr: window.devicePixelRatio });
+      return fallback;
+    }
+    const size = { width: w, height: h };
+    console.log("[toolbar] collapsed size from shell", { ...size, dpr: window.devicePixelRatio });
+    return size;
+  }, []);
 
   const placeWindowForPanelState = useCallback(async (width: number, height: number, placement: PanelPlacement, reason: string) => {
+    // Remember what we positioned and when (see the re-anchor step of `applyPanelGeometry`).
+    lastPlacementRef.current = { placement, at: Date.now() };
     if (placement === "center") {
       await getCurrentWindow().center();
       console.log("[toolbar] panel placement applied", {
@@ -256,32 +494,29 @@ export function PanelPage() {
     const workTop = monitor.workArea.position.y / scaleFactor;
     const workWidth = monitor.workArea.size.width / scaleFactor;
     const workHeight = monitor.workArea.size.height / scaleFactor;
-    const maxLeft = workLeft + workWidth - width - PANEL_SCREEN_MARGIN;
-    const maxTop = workTop + workHeight - height - PANEL_SCREEN_MARGIN;
-    const nextLeft =
-      placement === "bottom-right"
-        ? maxLeft
-        : workLeft + Math.max(PANEL_SCREEN_MARGIN, (workWidth - width) / 2);
-    const nextTop =
-      placement === "bottom-right"
-        ? maxTop
-        : workTop + Math.max(PANEL_SCREEN_MARGIN, (workHeight - height) / 2);
-    const clampedLeft = clamp(nextLeft, workLeft + PANEL_SCREEN_MARGIN, Math.max(workLeft + PANEL_SCREEN_MARGIN, maxLeft));
-    const clampedTop = clamp(nextTop, workTop + PANEL_SCREEN_MARGIN, Math.max(workTop + PANEL_SCREEN_MARGIN, maxTop));
+    // Stay where the user left the icon. First time, sit on the right edge, vertically centered.
+    const minLeft = workLeft;
+    const maxLeft = Math.max(minLeft, workLeft + workWidth - width);
+    const minTop = workTop;
+    const maxTop = Math.max(minTop, workTop + workHeight - height);
+    const x = clamp(dockPointRef.current?.x ?? maxLeft, minLeft, maxLeft);
+    const y = clamp(dockPointRef.current?.y ?? minTop + (workHeight - height) / 2, minTop, maxTop);
+    dockPointRef.current = { x, y };
 
-    // Position only — size + min constraints were already applied by syncFrameToWindow.
-    await getCurrentWindow().setPosition(new LogicalPosition(Math.round(clampedLeft), Math.round(clampedTop)));
+    await getCurrentWindow().setPosition(new LogicalPosition(Math.round(x), Math.round(y)));
     console.log("[toolbar] panel placement applied", {
       placement,
       reason,
       width,
       height,
-      x: Math.round(clampedLeft),
-      y: Math.round(clampedTop),
+      x: Math.round(x),
+      y: Math.round(y),
       monitor: monitor.name,
       scaleFactor,
     });
   }, []);
+  // Late binding for the verification loop inside `applyPanelGeometry`.
+  placeWindowRef.current = placeWindowForPanelState;
 
   const consumePendingPlacement = useCallback(
     (width: number, height: number, reason: string) => {
@@ -297,7 +532,7 @@ export function PanelPage() {
 
   const collapseWindowToBottomRight = useCallback(
     async (reason: string) => {
-      pendingPlacementRef.current = "bottom-right";
+      pendingPlacementRef.current = "floating";
       lastWindowSizeRef.current = "";
       const { width, height } = measureCollapsedShellSize();
       await applyPanelGeometry({
@@ -309,8 +544,8 @@ export function PanelPage() {
         maxWidth: width,
         maxHeight: height,
       });
-      await placeWindowForPanelState(width, height, "bottom-right", reason);
-      console.log("[toolbar] collapsed window parked bottom-right", {
+      await placeWindowForPanelState(width, height, "floating", reason);
+      console.log("[toolbar] collapsed window placed", {
         reason,
         width,
         height,
@@ -330,8 +565,11 @@ export function PanelPage() {
       const resultMirror = resultMirrorRef.current;
       const split = phase === "running" || phase === "review";
 
-      // Width is fixed at 1280 — only height auto-grows with wrapped content.
-      const nextW = PANEL_EXPANDED_MAX_WIDTH;
+      // 1280×400 is the size for a 1920×1080 CSS screen. A 150% display only has ~1280×680
+      // CSS pixels, so the same numbers cover the whole screen — scale them down first.
+      const design = scaledExpandedBounds(window.screen.availWidth, window.screen.availHeight);
+      const limit = fitCssToThisScreen(design.width, design.maxHeight, workAreaRef.current);
+      const nextW = limit.width;
       const chromeH =
         EXPANDED_H_CHROME_OUTSIDE_BODY + (isCommandOpen ? EXPANDED_COMMAND_POPOVER_RESERVE : 0);
       const paneBoxW = split
@@ -347,11 +585,8 @@ export function PanelPage() {
         EXPANDED_BODY_MIN_HEIGHT,
         split ? Math.max(inputWrappedH, resultWrappedH) : inputWrappedH,
       );
-      const nextH = clamp(
-        bodyContentH + EXPANDED_V_CHROME_OUTSIDE_BODY,
-        PANEL_EXPANDED_MIN_HEIGHT,
-        PANEL_EXPANDED_MAX_HEIGHT,
-      );
+      const minH = Math.min(design.minHeight, limit.height);
+      const nextH = clamp(bodyContentH + EXPANDED_V_CHROME_OUTSIDE_BODY, minH, limit.height);
 
       const sizeKey = `expanded:${nextW}x${nextH}`;
       if (sizeKey === lastWindowSizeRef.current) {
@@ -362,17 +597,20 @@ export function PanelPage() {
       void applyPanelGeometry({
         width: nextW,
         height: nextH,
-        minWidth: PANEL_EXPANDED_MIN_WIDTH,
-        minHeight: PANEL_EXPANDED_MIN_HEIGHT,
+        minWidth: Math.min(PANEL_EXPANDED_MIN_WIDTH, nextW),
+        minHeight: minH,
         maxWidth: PANEL_MAX_WIDTH,
         maxHeight: PANEL_MAX_HEIGHT,
         cacheExpandedSize: true,
       })
         .then(() => {
           consumePendingPlacement(nextW, nextH, "expanded-size-sync");
-          console.log("[toolbar] syncFrameToWindow (expanded, fixed width)", {
+          console.log("[toolbar] syncFrameToWindow (expanded, screen-fitted width)", {
             nextW,
             nextH,
+            scale: design.scale,
+            limit,
+            workArea: workAreaRef.current,
             paneBoxW: Math.round(paneBoxW),
             chromeH,
             bodyContentH,
@@ -1002,9 +1240,9 @@ export function PanelPage() {
         flushSync(() => {
           setExpanded(true);
         });
-        // Bootstrap the expanded window at the default 1280×400; the layout effect refines height.
-        const errW = EXPANDED_PANEL_WIDTH;
-        const errH = EXPANDED_PRESET_HEIGHT;
+        const preset = currentExpandedPreset();
+        const errW = preset.width;
+        const errH = preset.height;
         void applyPanelGeometry({
           width: errW,
           height: errH,
@@ -1031,12 +1269,14 @@ export function PanelPage() {
   useLayoutEffect(() => {
     let done = false;
 
-    const width = EXPANDED_PANEL_WIDTH;
-    const height = EXPANDED_PRESET_HEIGHT;
+    const fitted = currentExpandedPreset();
+    const width = fitted.width;
+    const height = fitted.height;
+    const dpr = window.devicePixelRatio || 1;
     lastWindowSizeRef.current = `expanded:${width}x${height}`;
-    console.log("[toolbar] first-paint reveal: default expanded size", { width, height });
+    console.log("[toolbar] first-paint reveal: default expanded size", { width, height, dpr });
 
-    void revealPanelFirstPaint(width, height)
+    void revealPanelFirstPaint(width, height, dpr)
       .then(() => {
         done = true;
         console.log("[toolbar] first-paint reveal: window shown (resize confirmed by backend)", { width, height });
@@ -1141,18 +1381,24 @@ export function PanelPage() {
         setExpanded(true);
       });
 
-      const w = EXPANDED_PANEL_WIDTH;
-      const h = EXPANDED_PRESET_HEIGHT;
+      const preset = currentExpandedPreset();
+      const w = preset.width;
+      const h = preset.height;
 
-      void applyPanelGeometry({
-        width: w,
-        height: h,
-        minWidth: PANEL_EXPANDED_MIN_WIDTH,
-        minHeight: PANEL_EXPANDED_MIN_HEIGHT,
-        maxWidth: PANEL_MAX_WIDTH,
-        maxHeight: PANEL_MAX_HEIGHT,
-        cacheExpandedSize: true,
-      })
+      // The panel may open on a different monitor than last time → read that screen's work
+      // area FIRST so the default size is fitted to the screen it actually appears on.
+      void refreshWorkArea()
+        .then(() =>
+          applyPanelGeometry({
+            width: w,
+            height: h,
+            minWidth: Math.min(PANEL_EXPANDED_MIN_WIDTH, w),
+            minHeight: PANEL_EXPANDED_MIN_HEIGHT,
+            maxWidth: PANEL_MAX_WIDTH,
+            maxHeight: PANEL_MAX_HEIGHT,
+            cacheExpandedSize: true,
+          }),
+        )
         .then(() => {
           void placeWindowForPanelState(w, h, "center", "panel-opened").catch((error) => {
             console.warn("[toolbar] panel-opened center placement failed", error);
@@ -1177,7 +1423,15 @@ export function PanelPage() {
     return () => {
       unlisten?.();
     };
-  }, [applyPanelGeometry, clearWorkSessionKeepExpanded, placeWindowForPanelState]);
+  }, [applyPanelGeometry, clearWorkSessionKeepExpanded, placeWindowForPanelState, refreshWorkArea]);
+
+  /**
+   * Keep the cached work area fresh: once on mount and on every expand/collapse (the user may
+   * have dragged the panel to another monitor or changed the Windows display scale since).
+   */
+  useEffect(() => {
+    void refreshWorkArea();
+  }, [expanded, refreshWorkArea]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -1289,6 +1543,40 @@ export function PanelPage() {
   }, [historyOpen, queueOpen]);
 
   useEffect(() => {
+    if (!expanded) {
+      commandWasOpenRef.current = false;
+      setCommandSlideOpen(false);
+      setCommandSlideMounted(false);
+      return;
+    }
+    if (commandOpen) {
+      commandWasOpenRef.current = true;
+      setCommandSlideMounted(true);
+      console.log("[toolbar] command slide → open");
+      let frame2 = 0;
+      const frame1 = requestAnimationFrame(() => {
+        frame2 = requestAnimationFrame(() => {
+          setCommandSlideOpen(true);
+          console.log("[toolbar] command slide → open frame committed");
+        });
+      });
+      return () => {
+        cancelAnimationFrame(frame1);
+        cancelAnimationFrame(frame2);
+      };
+    }
+    setCommandSlideOpen(false);
+    if (!commandWasOpenRef.current) return;
+    commandWasOpenRef.current = false;
+    console.log("[toolbar] command slide → close");
+    const timer = window.setTimeout(() => {
+      setCommandSlideMounted(false);
+      console.log("[toolbar] command slide → hidden");
+    }, 480);
+    return () => window.clearTimeout(timer);
+  }, [commandOpen, expanded]);
+
+  useEffect(() => {
     if (!commandOpen) return;
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -1312,11 +1600,12 @@ export function PanelPage() {
   }, [commandOpen]);
 
   useEffect(() => {
+    const preset = currentExpandedPreset();
     void applyPanelGeometry({
-      width: EXPANDED_PANEL_WIDTH,
-      height: EXPANDED_PRESET_HEIGHT,
-      minWidth: PANEL_EXPANDED_MIN_WIDTH,
-      minHeight: PANEL_EXPANDED_MIN_HEIGHT,
+      width: preset.width,
+      height: preset.height,
+      minWidth: Math.min(PANEL_EXPANDED_MIN_WIDTH, preset.width),
+      minHeight: Math.min(PANEL_EXPANDED_MIN_HEIGHT, preset.height),
       maxWidth: PANEL_MAX_WIDTH,
       maxHeight: PANEL_MAX_HEIGHT,
     }).catch((error) => {
@@ -1375,15 +1664,16 @@ export function PanelPage() {
         setCommandOpen(openCommand);
       });
 
-      const w = EXPANDED_PANEL_WIDTH;
-      const h = EXPANDED_PRESET_HEIGHT;
+      const preset = currentExpandedPreset();
+      const w = preset.width;
+      const h = preset.height;
 
       try {
         await applyPanelGeometry({
           width: w,
           height: h,
-          minWidth: PANEL_EXPANDED_MIN_WIDTH,
-          minHeight: PANEL_EXPANDED_MIN_HEIGHT,
+          minWidth: Math.min(PANEL_EXPANDED_MIN_WIDTH, w),
+          minHeight: Math.min(PANEL_EXPANDED_MIN_HEIGHT, h),
           maxWidth: PANEL_MAX_WIDTH,
           maxHeight: PANEL_MAX_HEIGHT,
           cacheExpandedSize: true,
@@ -1416,7 +1706,7 @@ export function PanelPage() {
         setCommandOpen(false);
       });
       void collapseWindowToBottomRight("input-toggle-collapse").catch((error) => {
-        console.warn("[toolbar] collapse bottom-right failed", error);
+        console.warn("[toolbar] collapse dock-right failed", error);
       });
       console.log("[toolbar] collapse input panel (input icon toggle)");
       return;
@@ -1694,8 +1984,8 @@ export function PanelPage() {
    * measurements (and the collapsed root border-box) are accurate.
    * - Expanded: syncFrameToWindow measures hidden mirrors of the input/result and setSize()
    * - Expanded: width fixed at 1280; height auto-grows with wrapped content [400,720].
-   * - Collapsed: syncFrameToWindow measures the root border box and setSize() so the window
-   *   wraps the tiny 4-icon toolbar exactly — no transparent bottom layer.
+   * - Collapsed: syncFrameToWindow measures the keyboard icon and setSize() so the window
+   *   is that one button, docked to the right edge.
    */
   useLayoutEffect(() => {
     if (!frameRef.current) return;
@@ -1703,13 +1993,95 @@ export function PanelPage() {
   }, [commandOpen, cmds.length, errorMsg, expanded, inputText, phase, resultText, stylePreset, zorderMode, copiedFlash, locale, syncFrameToWindow]);
 
   const onShellPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!expanded) {
+      if (event.button !== 0) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const drag = {
+        pointerId: event.pointerId,
+        accX: 0,
+        accY: 0,
+        originX: null as number | null,
+        originY: null as number | null,
+        moved: false,
+        frame: null as { workLeft: number; workTop: number; workWidth: number; workHeight: number } | null,
+        winW: 0,
+        winH: 0,
+      };
+      dockDragRef.current = drag;
+      console.log("[toolbar] dock drag start");
+      void (async () => {
+        const win = getCurrentWindow();
+        const [pos, scale, outer, monitor] = await Promise.all([
+          win.outerPosition(),
+          win.scaleFactor(),
+          win.outerSize(),
+          currentMonitor().catch(() => null).then((found) => found ?? primaryMonitor().catch(() => null)),
+        ]);
+        if (dockDragRef.current !== drag) return;
+        const factor = scale || 1;
+        drag.originX = pos.x / factor;
+        drag.originY = pos.y / factor;
+        drag.winW = outer.width / factor;
+        drag.winH = outer.height / factor;
+        if (monitor) {
+          const s = monitor.scaleFactor || 1;
+          drag.frame = {
+            workLeft: monitor.workArea.position.x / s,
+            workTop: monitor.workArea.position.y / s,
+            workWidth: monitor.workArea.size.width / s,
+            workHeight: monitor.workArea.size.height / s,
+          };
+        }
+        console.log("[toolbar] dock drag armed", {
+          origin: { x: drag.originX, y: drag.originY },
+          size: { w: drag.winW, h: drag.winH },
+        });
+      })();
+      return;
+    }
     const target = event.target as HTMLElement | null;
     if (!target) return;
     if (target.closest("button, textarea, input, select, [data-no-window-drag='true']")) return;
     void getCurrentWindow().startDragging().catch((error) => {
       console.warn("[toolbar] start dragging failed", error);
     });
+  }, [expanded]);
+
+  const onShellPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dockDragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    drag.accX += event.movementX;
+    drag.accY += event.movementY;
+    if (Math.hypot(drag.accX, drag.accY) < DOCK_DRAG_SLOP_PX) return;
+    drag.moved = true;
+    if (drag.originX == null || drag.originY == null || !drag.frame || drag.winW <= 0 || drag.winH <= 0) return;
+    const minLeft = drag.frame.workLeft;
+    const maxLeft = Math.max(minLeft, drag.frame.workLeft + drag.frame.workWidth - drag.winW);
+    const minTop = drag.frame.workTop;
+    const maxTop = Math.max(minTop, drag.frame.workTop + drag.frame.workHeight - drag.winH);
+    const x = clamp(drag.originX + drag.accX, minLeft, maxLeft);
+    const y = clamp(drag.originY + drag.accY, minTop, maxTop);
+    dockPointRef.current = { x, y };
+    void getCurrentWindow().setPosition(new LogicalPosition(Math.round(x), Math.round(y)));
   }, []);
+
+  const onShellPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dockDragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    dockDragRef.current = null;
+    // Pointer capture retargets the click away from the button, so a tap expands from here.
+    suppressDockClickRef.current = true;
+    if (drag.moved && dockPointRef.current) {
+      writeStoredDock(dockPointRef.current);
+      console.log("[toolbar] dock drag end", {
+        x: Math.round(dockPointRef.current.x),
+        y: Math.round(dockPointRef.current.y),
+      });
+      return;
+    }
+    console.log("[toolbar] collapsed keyboard click → expand main panel");
+    openInputPanel();
+  }, [openInputPanel]);
 
   return (
     <main
@@ -1721,18 +2093,25 @@ export function PanelPage() {
         ref={shellRef}
         className={`ime-panel-shell${expanded ? " ime-panel-shell--expanded" : " ime-panel-shell--collapsed"}`}
         data-style-preset={stylePreset}
-        data-tauri-drag-region
+        data-tauri-drag-region={expanded ? true : undefined}
         onPointerDown={onShellPointerDown}
+        onPointerMove={onShellPointerMove}
+        onPointerUp={onShellPointerUp}
+        onPointerCancel={onShellPointerUp}
       >
-        <div className={`ime-panel-layout${expanded ? " ime-panel-layout--expanded" : " ime-panel-layout--collapsed"}`}>
+        <div
+          className={`ime-panel-layout${expanded ? " ime-panel-layout--expanded" : " ime-panel-layout--collapsed"}${
+            expanded && commandSlideOpen ? " ime-panel-layout--command-open" : ""
+          }`}
+        >
           <div
             ref={railRef}
             className={`ime-rail-anchor${
-              commandOpen
-                ? expanded
-                  ? " ime-rail-anchor--command-open ime-rail-anchor--command-open-expanded"
-                  : " ime-rail-anchor--command-open ime-rail-anchor--command-open-collapsed"
-                : ""
+              expanded && commandSlideMounted
+                ? " ime-rail-anchor--command-open ime-rail-anchor--command-open-expanded"
+                : commandOpen
+                  ? " ime-rail-anchor--command-open ime-rail-anchor--command-open-collapsed"
+                  : ""
             }`}
           >
             <section className={`ime-primary-rail${expanded ? " ime-primary-rail--vertical" : " ime-primary-rail--horizontal"}`}>
@@ -1741,13 +2120,22 @@ export function PanelPage() {
                   type="button"
                   className={`ime-icon-btn${expanded ? " ime-icon-btn--active" : ""}`}
                   data-tauri-drag-region="false"
-                  onClick={openInputPanel}
+                  onClick={() => {
+                    if (suppressDockClickRef.current) {
+                      suppressDockClickRef.current = false;
+                      console.log("[toolbar] dock drag swallowed the expand click");
+                      return;
+                    }
+                    openInputPanel();
+                  }}
                   title={expanded ? copy.collapseInput : copy.expandInput}
                   aria-label={expanded ? copy.collapseInput : copy.expandInput}
                 >
                   <span aria-hidden="true">⌨</span>
                 </button>
 
+                {expanded ? (
+                <>
                 <button
                   type="button"
                   className={`ime-icon-btn${commandOpen ? " ime-icon-btn--active" : ""}`}
@@ -1780,6 +2168,8 @@ export function PanelPage() {
                 >
                   <span aria-hidden="true">⚙</span>
                 </button>
+                </>
+                ) : null}
               </div>
 
               {expanded ? (
@@ -1808,7 +2198,13 @@ export function PanelPage() {
               ) : null}
             </section>
 
-            {commandOpen ? (
+            {(expanded ? commandSlideMounted : commandOpen) ? (
+              <div
+                className={
+                  expanded ? `ime-command-slide${commandSlideOpen ? " ime-command-slide--open" : ""}` : undefined
+                }
+                style={expanded ? undefined : { display: "contents" }}
+              >
               <section
                 className={`ime-command-popover${expanded ? " ime-command-popover--expanded" : " ime-command-popover--collapsed"}`}
                 data-tauri-drag-region="false"
@@ -1842,6 +2238,7 @@ export function PanelPage() {
 
                 <p className="ime-command-desc">{commandDescription}</p>
               </section>
+              </div>
             ) : null}
           </div>
 

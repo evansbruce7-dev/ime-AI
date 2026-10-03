@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate, useOutlet } from "react-router-dom";
-import { AnimatePresence, motion } from "motion/react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import {
   ChartNoAxesColumn,
@@ -78,24 +77,17 @@ function currentGroup(pathname: string, groups: NavGroup[]): NavGroup {
   return groups.find((group) => group.items.some((entry) => entry.to === item.to)) ?? groups[0];
 }
 
-/** Cross-fade the active settings page without remounting the shell. */
+/**
+ * Swap the settings page in place.
+ * The old cross-fade waited for the previous page to fade out first, so the stage went blank
+ * on every tab click. Lazy route chunks are caught here so the rail and title bar stay put.
+ */
 function AtelierStage() {
-  const location = useLocation();
   const outlet = useOutlet();
-
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div
-        key={location.pathname}
-        className="atelier-stage"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      >
-        {outlet}
-      </motion.div>
-    </AnimatePresence>
+    <Suspense fallback={<div className="atelier-stage atelier-stage--hold" aria-busy="true" />}>
+      <div className="atelier-stage">{outlet}</div>
+    </Suspense>
   );
 }
 
@@ -130,6 +122,20 @@ export function WorkspaceLayout() {
     viewportRef.current?.scrollTo({ top: 0 });
     console.log("[atelier] section", active.to, active.label);
   }, [pathname, active.to, active.label]);
+
+  useEffect(() => {
+    // Warm the other tabs so the first click does not suspend the page (that suspend used to
+    // replace the whole settings window with the route fallback).
+    void import("../pages/Home");
+    void import("../pages/Statistics");
+    void import("../pages/Commands");
+    void import("../pages/Models");
+    void import("../pages/Queue");
+    void import("../pages/Behavior");
+    void import("../pages/Privacy");
+    void import("../pages/Appearance");
+    console.log("[atelier] preloading settings pages");
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

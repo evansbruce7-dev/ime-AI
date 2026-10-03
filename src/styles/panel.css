@@ -23,22 +23,29 @@ body.panel-window-body #root {
   overflow: hidden !important;
 }
 
-/* Collapsed: fill the native window; do not clip the shell while it is wider than the frame. */
+/* Collapsed: hug the icon strip. Do NOT stretch to the native window — on another
+   DPI the OS frame can stay taller than the icons, and a 100% shell paints that
+   extra area as a panel under the toolbar. */
+html.panel-window-html.panel-window-collapsed,
 body.panel-window-body.panel-window-collapsed,
 body.panel-window-body.panel-window-collapsed #root {
-  width: 100%;
-  height: 100%;
+  width: max-content !important;
+  height: max-content !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  background: transparent !important;
   overflow: hidden !important;
 }
 
 .ime-panel-root:not(.ime-panel-root--expanded) {
-  width: 100%;
-  height: 100%;
+  width: max-content;
+  height: max-content;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   display: flex;
-  align-items: stretch;
-  justify-content: stretch;
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 
 .ime-panel-root {
@@ -113,37 +120,52 @@ body.panel-window-body.panel-window-collapsed #root {
   overflow: hidden;
 }
 
-/* Collapsed: native window size is set to fit 4 icons — shell fills the frame, icons centered. */
+/* Collapsed: shell hugs the 4 icons. The native window is then sized to this box. */
 body.panel-window-body.panel-window-collapsed .ime-panel-root {
-  align-items: stretch;
+  align-items: flex-start;
+  width: max-content;
+  height: max-content;
 }
 
 body.panel-window-body.panel-window-collapsed .ime-panel-shell.ime-panel-shell--collapsed {
-  width: 100%;
-  height: 100%;
   min-width: 0;
+  min-height: 0;
   max-width: none;
-  align-self: stretch;
+  align-self: flex-start;
   display: flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  flex-shrink: 1;
-  /* Extra side padding keeps head/tail icons clear of rounded-corner clipping. */
-  padding: 6px 10px;
+  flex: 0 0 auto !important;
+  flex-shrink: 0;
+  /* Keep in sync with COLLAPSED_SHELL_PAD_X_PX / COLLAPSED_SHELL_PAD_Y_PX (4+4) in
+     panelConstants.ts. 4px is the gap from the icon edge to the rounded border — tighter
+     than this clips the 12px button radius against the shell radius. */
+  width: max-content !important;
+  height: max-content !important;
+  padding: 4px !important;
+  border-radius: 16px;
+  cursor: grab;
 }
 
 body.panel-window-body.panel-window-collapsed .ime-panel-layout.ime-panel-layout--collapsed,
 body.panel-window-body.panel-window-collapsed .ime-rail-anchor,
 body.panel-window-body.panel-window-collapsed .ime-primary-rail.ime-primary-rail--horizontal {
-  width: 100%;
-  height: 100%;
+  width: max-content;
+  height: max-content;
   max-width: none;
   min-width: 0;
-  flex-shrink: 1;
+  min-height: 0;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  gap: 0;
+}
+
+body.panel-window-body.panel-window-collapsed .ime-icon-btn {
+  cursor: grab;
 }
 
 body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
@@ -269,6 +291,8 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  /* Gap closes as the command card slides in, so the editor moves in one curve. */
+  transition: gap 0.46s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ime-rail-anchor {
@@ -290,9 +314,56 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
   padding-top: 0;
 }
 
-/* Expanded: reserve horizontal space for the command card to the right of the 38px vertical rail. */
-.ime-rail-anchor--command-open-expanded {
-  padding-right: 256px;
+/* Expanded + command open: rail and card sit side by side in normal flow.
+   The card's right edge is the anchor's right edge, so with layout gap 0
+   the card meets the editor — no gutter, and no overlap onto either neighbor.
+   8px is only the clearance between the icon column and the card. */
+.ime-panel-layout--expanded .ime-rail-anchor--command-open-expanded {
+  flex-direction: row;
+  align-items: stretch;
+  /* Clearance lives inside the sliding track so it grows with the card. */
+  gap: 0;
+  padding-right: 0;
+  min-height: 0;
+}
+
+/* Track that widens to the right. The card inside translates with the same
+   curve, so its right edge stays flush with the editor for the whole slide. */
+.ime-command-slide {
+  flex: 0 0 0px;
+  width: 0;
+  min-width: 0;
+  max-width: 248px;
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  overflow: hidden;
+  transition:
+    flex-basis 0.46s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.46s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ime-command-slide--open {
+  flex-basis: 248px;
+  width: 248px;
+}
+
+.ime-panel-layout--expanded .ime-rail-anchor--command-open-expanded .ime-primary-rail--vertical {
+  /* Parent is now a row; don't let flex:1 grow the icon column sideways. */
+  flex: 0 0 38px;
+  width: 38px;
+  align-self: stretch;
+}
+
+/* Command card open: drop the layout gutter and square the shared edge so
+   rounded corners don't show the shell in the seam. */
+.ime-panel-layout--expanded.ime-panel-layout--command-open {
+  gap: 0;
+}
+
+.ime-panel-layout--expanded.ime-panel-layout--command-open .ime-editor-panel {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 .ime-primary-rail {
@@ -406,12 +477,53 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
 .ime-command-popover--collapsed {
   left: calc(100% + 8px);
   top: 0;
+  animation: ime-command-slide-in-right 0.36s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 38px rail + 8px gap — keeps the card off the icon column (was overlapping after wider popover). */
-.ime-command-popover--expanded {
-  left: calc(38px + 8px);
-  top: 0;
+@keyframes ime-command-slide-in-right {
+  from {
+    transform: translateX(-18px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* In-flow beside the rail (see .ime-rail-anchor--command-open-expanded).
+   Stretch to the editor's height; scroll inside if the command list is taller. */
+.ime-panel-layout--expanded .ime-command-popover--expanded {
+  position: relative;
+  left: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  flex: 0 0 240px;
+  width: 240px;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  overflow: auto;
+  border-radius: 18px 0 0 18px;
+  /* No outward shadow — it would paint over the editor and look like overlap. */
+  box-shadow: none;
+}
+
+/* 8px rail clearance + 240px card. translateX(-248px) parks the card fully
+   left of the clip; opening eases it to 0 while the track widens to 248px. */
+.ime-panel-layout--expanded .ime-command-slide .ime-command-popover--expanded {
+  flex: 0 0 240px;
+  width: 240px;
+  margin-left: 8px;
+  height: 100%;
+  transform: translateX(-248px);
+  transition: transform 0.46s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ime-panel-layout--expanded .ime-command-slide--open .ime-command-popover--expanded {
+  transform: translateX(0);
 }
 
 .ime-command-popover-head {
@@ -513,6 +625,9 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
   min-width: 0;
   padding: 10px 10px 8px;
   border-radius: 18px;
+  transition:
+    border-top-left-radius 0.46s cubic-bezier(0.22, 1, 0.36, 1),
+    border-bottom-left-radius 0.46s cubic-bezier(0.22, 1, 0.36, 1);
   background: rgba(247, 250, 255, 0.96);
   /* Inset-only: an outward blur here would bleed to the window edge (shell == window),
      re-creating a dark halo. The shell's own border provides the outer dark edge. */
@@ -521,12 +636,15 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
 
 .ime-editor-topline {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
   max-width: 100%;
-  flex-wrap: wrap;
+  /* One row whenever the actions fit. A wide panel used to wrap the icon
+     buttons under the title because the model chip's max-content width
+     forced a flex wrap before anything could shrink. */
+  flex-wrap: nowrap;
 }
 
 .ime-editor-meta {
@@ -538,18 +656,22 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
 
 /* Left meta: single inline row (status + command + model) so model sits flush after the command. */
 .ime-editor-meta--left {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .ime-editor-title-row {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
   max-width: 100%;
+  width: 100%;
+  overflow: hidden;
 }
 
 .ime-editor-meta--right {
@@ -721,6 +843,7 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   min-height: 24px;
   padding: 0.24rem 0.55rem;
   border-radius: 999px;
@@ -743,25 +866,29 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
 }
 
 .ime-command-name {
-  /* Keep the full English title visible; shrink with an ellipsis only if the row is still too narrow. */
-  flex: 1 1 auto;
+  /* Keep the full title on one line; ellipsis only after the model chip has given up its space. */
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
   font-size: 0.92rem;
   font-weight: 700;
   color: #163056;
-  white-space: normal;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.25;
 }
 
-/* Model chip sits immediately after the command title on the same row. */
+/* Model chip sits immediately after the command title on the same row.
+   High flex-shrink so a long provider id ellipsizes before the title or the action buttons wrap.
+   display:block (not flex) so text-overflow can clip the label; a flex chip's text won't shrink. */
 .ime-provider-chip {
-  display: inline-flex;
-  align-items: center;
-  flex: 0 1 auto;
+  display: block;
+  flex: 0 100 auto;
   min-height: 24px;
+  line-height: 1.4;
   min-width: 0;
+  max-width: 100%;
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
   background: rgba(19, 38, 68, 0.06);
@@ -776,11 +903,13 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
 /* Competition candidate tags shown next to the provider chip when competition is on. */
 .ime-competition-tags {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex: 0 20 auto;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
   max-width: min(280px, 100%);
   min-width: 0;
+  overflow: hidden;
 }
 
 .ime-model-tag {
@@ -844,10 +973,10 @@ body.panel-window-body.panel-window-collapsed .ime-rail-cluster--main {
   overflow-x: hidden;
 }
 
-/* Expanded editor column: flex to fill the remaining width after the 38px rail (and the
-   256px command-popover reserve when the command card is open), and stretch to the full
-   shell height. overflow:hidden so the rounded shell clips it; the editor body inside
-   scrolls for content taller than the (auto-grown, max-720) window. */
+/* Expanded editor column: flex to fill the remaining width after the 38px rail
+   (and the in-flow 240px command card + 8px clearance when that card is open),
+   and stretch to the full shell height. overflow:hidden so the rounded shell clips
+   it; the editor body inside scrolls for content taller than the window. */
 .ime-panel-layout--expanded .ime-editor-panel {
   flex: 1 1 auto;
   min-width: 0;

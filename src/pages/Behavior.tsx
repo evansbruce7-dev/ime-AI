@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { getSettings, saveSettings, type AppSettings } from "../api";
+import { getSettings, peekSettings, saveSettings, type AppSettings } from "../api";
 import { EliteSwitch } from "../components/settings/EliteSwitch";
 import { PageIntro } from "../components/settings/PageIntro";
 import { useI18n } from "../i18n/context";
@@ -12,7 +12,7 @@ import { readTrayHintDismissed, writeTrayHintDismissed } from "../lib/prefs";
 export function BehaviorPage() {
   const { locale, m } = useI18n();
   const copy = m.behavior;
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(peekSettings);
   const [err, setErr] = useState<string | null>(null);
   const [notice, setNotice] = useState<null | "shortcut" | "autostart-on" | "autostart-off">(null);
   const [trayDismissed, setTrayDismissed] = useState(readTrayHintDismissed);

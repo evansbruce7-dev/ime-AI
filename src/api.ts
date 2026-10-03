@@ -269,13 +269,25 @@ export function newCompetitionCandidate(partial?: Partial<CompetitionCandidate>)
   };
 }
 
+/** Last settings read or saved in this webview. Tab switches paint from this instead of a loading blank. */
+let settingsCache: AppSettings | null = null;
+
+export function peekSettings(): AppSettings | null {
+  return settingsCache;
+}
+
 export async function getSettings(): Promise<AppSettings> {
-  const s = await invoke<AppSettings>("get_settings");
-  return normalizeSettings(s);
+  const s = normalizeSettings(await invoke<AppSettings>("get_settings"));
+  settingsCache = s;
+  console.log("[settings] cache updated", s.provider, s.model);
+  return s;
 }
 
 export async function saveSettings(next: AppSettings): Promise<void> {
-  return invoke("save_settings", { next: normalizeSettings(next) });
+  const normalized = normalizeSettings(next);
+  await invoke("save_settings", { next: normalized });
+  settingsCache = normalized;
+  console.log("[settings] cache updated after save", normalized.provider, normalized.model);
 }
 
 export async function getApiKeyStatus(): Promise<ApiKeyStatus> {
@@ -395,8 +407,12 @@ export async function reportPanelExpandedSize(width: number, height: number): Pr
   return invoke("report_panel_expanded_size", { width, height });
 }
 
-export async function revealPanelFirstPaint(width: number, height: number): Promise<void> {
-  return invoke("reveal_panel_first_paint", { width, height });
+export async function revealPanelFirstPaint(
+  width: number,
+  height: number,
+  devicePixelRatio?: number,
+): Promise<void> {
+  return invoke("reveal_panel_first_paint", { width, height, devicePixelRatio: devicePixelRatio ?? null });
 }
 
 export async function syncPanelWindowGeometry(args: {
@@ -409,6 +425,8 @@ export async function syncPanelWindowGeometry(args: {
   x?: number;
   y?: number;
   cacheExpandedSize?: boolean;
+  /** `window.devicePixelRatio`. Rust turns CSS px into physical px with this, not monitor DPI alone. */
+  devicePixelRatio?: number;
 }): Promise<void> {
   return invoke("sync_panel_window_geometry", {
     width: args.width,
@@ -420,6 +438,7 @@ export async function syncPanelWindowGeometry(args: {
     x: args.x ?? null,
     y: args.y ?? null,
     cacheExpandedSize: args.cacheExpandedSize ?? false,
+    devicePixelRatio: args.devicePixelRatio ?? null,
   });
 }
 

@@ -59,7 +59,7 @@ const zh = {
   },
   appearance: {
     kicker: "外观",
-    title: "气质与版本",
+    title: "主题与版本",
     lede: "界面语言和这一窗口的配色在这里切换。浮动面板仍用面板里的风格按钮，不受主题影响。",
     languageKicker: "语言",
     languageTitle: "界面语言",

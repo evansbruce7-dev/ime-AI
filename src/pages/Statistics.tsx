@@ -34,7 +34,7 @@ function MetricCard({ title, data, copy }: { title: string; data: ProviderUsage;
 export function StatisticsPage() {
   const { m } = useI18n();
   const copy = m.stats;
-  const [stats, setStats] = useState<UsageStats | null>(null);
+  const [stats, setStats] = useState<UsageStats | null>(() => readUsageStats());
 
   const reload = useCallback(() => {
     const next = readUsageStats();

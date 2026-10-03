@@ -1,6 +1,7 @@
 * text=auto
 
 *.png binary
+*.gif binary
 *.ico binary
 *.icns binary
 *.svg text eol=lf

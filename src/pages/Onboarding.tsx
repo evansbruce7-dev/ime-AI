@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   getSettings,
+  peekSettings,
   saveSettings,
   setApiKey,
   testLlmConnection,
@@ -29,7 +30,7 @@ export function OnboardingPage() {
   const copy = m.onboarding;
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(peekSettings);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [testMsg, setTestMsg] = useState<string | null>(null);

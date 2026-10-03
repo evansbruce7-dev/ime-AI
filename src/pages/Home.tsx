@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getSettings, getApiKeyStatus, listCommands, testLlmConnection } from "../api";
+import { getSettings, getApiKeyStatus, listCommands, peekSettings, testLlmConnection } from "../api";
 import type { AppSettings } from "../api";
 import { PageIntro } from "../components/settings/PageIntro";
 import { useI18n } from "../i18n/context";
@@ -13,7 +13,7 @@ import { formatShownError } from "../lib/llmErrors";
 export function HomePage() {
   const { locale, m } = useI18n();
   const copy = m.home;
-  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(peekSettings);
   const [keyOk, setKeyOk] = useState<boolean | null>(null);
   const [cmdCount, setCmdCount] = useState<number | null>(null);
   const [testOk, setTestOk] = useState<boolean | null>(null);
